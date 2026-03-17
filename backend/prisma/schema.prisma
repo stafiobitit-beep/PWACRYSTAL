@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   // "CUSTOMER", "CLEANER", "ADMIN"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks        CleaningTask[] @relation("AssignedTo")
+  managedTasks CleaningTask[] @relation("ManagedBy")
+  messages     TaskMessage[]
+  locations    Location[]
+}
+
+model Location {
+  id        String   @id @default(uuid())
+  name      String
+  address   String
+  customerId String
+  customer  User     @relation(fields: [customerId], references: [id])
+  tasks     CleaningTask[]
+}
+
+model CleaningTask {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  date        DateTime
+  status      String   // "PLANNED", "IN_PROGRESS", "DONE", "ISSUE"
+  
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+  
+  cleanerId   String?
+  cleaner     User?    @relation("AssignedTo", fields: [cleanerId], references: [id])
+  
+  managerId   String?
+  manager     User?    @relation("ManagedBy", fields: [managerId], references: [id])
+
+  messages    TaskMessage[]
+  photos      TaskPhoto[]
+  incidents   Incident[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model TaskMessage {
+  id        String   @id @default(uuid())
+  content   String
+  timestamp DateTime @default(now())
+  
+  senderId String
+  sender   User     @relation(fields: [senderId], references: [id])
+  
+  taskId   String
+  task     CleaningTask @relation(fields: [taskId], references: [id])
+}
+
+model TaskPhoto {
+  id        String   @id @default(uuid())
+  url       String
+  type      String   // "BEFORE", "AFTER", "GENERAL"
+  createdAt DateTime @default(now())
+  
+  taskId   String
+  task     CleaningTask @relation(fields: [taskId], references: [id])
+}
+
+model Incident {
+  id          String   @id @default(uuid())
+  description String
+  status      String   // "OPEN", "RESOLVED"
+  createdAt   DateTime @default(now())
+  
+  taskId      String
+  task        CleaningTask @relation(fields: [taskId], references: [id])
+}
+
+model OdooConfig {
+  id        String   @id @default(uuid())
+  url       String
+  db        String
+  username  String
+  apiKey    String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
