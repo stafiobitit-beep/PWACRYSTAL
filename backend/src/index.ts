@@ -310,10 +310,20 @@ app.get('/api/locations', authenticateToken, authorizeRole(['ADMIN']), async (re
   res.json(locations);
 });
 
+app.get('/api/odoo/projects', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
+  try {
+    const projects = await OdooProjectService.getProjects();
+    res.json(projects);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch Odoo projects' });
+  }
+});
+
 // --- SYNC ROUTE ---
 app.post('/api/sync/all', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
   try {
-    console.log('Starting full Odoo sync...');
+    const { selectedProjectIds } = req.body; // Array of IDs or undefined for all
+    console.log('Starting Odoo sync...', selectedProjectIds ? `Filtered: ${selectedProjectIds}` : 'All');
     const hashedDefaultPassword = await bcrypt.hash('password123', 10);
 
     // 1. Sync Partners -> Customers
@@ -335,7 +345,12 @@ app.post('/api/sync/all', authenticateToken, authorizeRole(['ADMIN']), async (re
     }
 
     // 2. Sync Projects -> Locations
-    const projects = await OdooProjectService.getProjects();
+    let projects = await OdooProjectService.getProjects();
+    
+    if (selectedProjectIds && Array.isArray(selectedProjectIds)) {
+      projects = projects.filter((p: any) => selectedProjectIds.includes(p.id));
+    }
+
     for (const pr of projects) {
        // Find partner in local DB
        let customerId = (await prisma.user.findFirst({ where: { odooPartnerId: pr.partner_id[0] } }))?.id;
@@ -352,6 +367,11 @@ app.post('/api/sync/all', authenticateToken, authorizeRole(['ADMIN']), async (re
     // 3. Sync Tasks
     const odooTasks = await OdooTaskService.getTasks();
     for (const t of odooTasks) {
+       // Filter tasks by selected projects if applicable
+       if (selectedProjectIds && Array.isArray(selectedProjectIds) && !selectedProjectIds.includes(t.project_id[0])) {
+         continue;
+       }
+
        const location = await prisma.location.findUnique({ where: { odooProjectId: t.project_id[0] } });
        if (location) {
          await prisma.cleaningTask.upsert({
