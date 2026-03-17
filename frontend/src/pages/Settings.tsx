@@ -34,6 +34,10 @@ const Settings: React.FC = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!config.url.startsWith('http')) {
+      toast.error('URL moet beginnen met http:// of https://');
+      return;
+    }
     setSaving(true);
     try {
       await client.post('/settings/odoo', config);

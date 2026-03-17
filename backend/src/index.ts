@@ -415,9 +415,9 @@ app.post('/api/sync/all', authenticateToken, authorizeRole(['ADMIN']), async (re
     }
 
     res.json({ message: 'Sync completed successfully' });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Odoo Sync Error:', error);
-    res.status(500).json({ error: 'Sync failed' });
+    res.status(500).json({ error: `Sync failed: ${error.message || 'Unknown error'}` });
   }
 });
 

@@ -56,7 +56,10 @@ const TaskDetail: React.FC = () => {
     e.preventDefault();
     if (!message.trim()) return;
     try {
-      const { data } = await client.post(`/tasks/${id}/messages`, { content: message });
+      const { data } = await client.post(`/tasks/${id}/messages`, { 
+        content: message,
+        odooTaskId: task.odooTaskId 
+      });
       setTask((prev: any) => ({ ...prev, messages: [...prev.messages, data] }));
       setMessage('');
     } catch (error) {
