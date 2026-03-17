@@ -15,6 +15,7 @@ model User {
   role      String   // "CUSTOMER", "CLEANER", "ADMIN"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  odooPartnerId Int?    @unique
 
   tasks        CleaningTask[] @relation("AssignedTo")
   managedTasks CleaningTask[] @relation("ManagedBy")
@@ -28,6 +29,7 @@ model Location {
   address   String
   customerId String
   customer  User     @relation(fields: [customerId], references: [id])
+  odooProjectId Int?   @unique
   tasks     CleaningTask[]
 }
 
@@ -53,6 +55,7 @@ model CleaningTask {
   timesheets  Timesheet[]
 
   timerStartedAt DateTime? // When the cleaner clicks "Start"
+  odooTaskId     Int?      @unique
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

@@ -98,7 +98,9 @@ const Dashboard: React.FC = () => {
       {/* Task List */}
       <div className="p-6">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold text-gray-900">Mijn Taken</h2>
+          <h2 className="text-xl font-bold text-gray-900">
+            {user?.role === 'ADMIN' ? 'Alle Projecten' : 'Mijn Taken'}
+          </h2>
         </div>
         
         {filteredTasks.length === 0 ? (
@@ -106,6 +108,27 @@ const Dashboard: React.FC = () => {
             title="Geen taken gevonden" 
             message={activeFilter === 'ALL' ? "Je hebt momenteel geen toegewezen taken." : "Geen taken met deze status."} 
           />
+        ) : user?.role === 'ADMIN' ? (
+          // Group by Customer/Project
+          Object.entries(
+            filteredTasks.reduce((acc: any, task: any) => {
+              const customerName = task.location?.name || 'Onbekend';
+              if (!acc[customerName]) acc[customerName] = [];
+              acc[customerName].push(task);
+              return acc;
+            }, {})
+          ).map(([customer, customerTasks]: [string, any]) => (
+            <div key={customer} className="mb-8">
+              <h3 className="text-xs font-black uppercase tracking-widest text-primary-600 mb-4 ml-1 flex items-center gap-2">
+                <Filter className="w-3 h-3" /> {customer}
+              </h3>
+              <div className="space-y-4">
+                {customerTasks.map((task: any) => (
+                  <TaskCard key={task.id} task={task} />
+                ))}
+              </div>
+            </div>
+          ))
         ) : (
           filteredTasks.map(task => (
             <TaskCard key={task.id} task={task} />

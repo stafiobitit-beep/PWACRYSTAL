@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import prisma from './utils/prisma.js';
 import { authenticateToken, authorizeRole, type AuthRequest } from './middleware/auth.js';
-import { OdooTaskService, OdooMessageService, OdooAttachmentService, OdooIncidentService, OdooTimesheetService } from './services/odoo.service.js';
+import { OdooTaskService, OdooMessageService, OdooAttachmentService, OdooIncidentService, OdooTimesheetService, OdooProjectService, OdooPartnerService } from './services/odoo.service.js';
 
 dotenv.config();
 
@@ -111,6 +111,11 @@ app.get('/api/tasks/:id', authenticateToken, async (req, res) => {
 
 app.post('/api/tasks', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
   const { title, description, date, locationId, cleanerId } = req.body;
+  
+  const location = await prisma.location.findUnique({ where: { id: locationId } });
+  const cleaner = await prisma.user.findUnique({ where: { id: cleanerId } });
+  
+  // 1. Create locally
   const task = await prisma.cleaningTask.create({
     data: {
       title,
@@ -122,6 +127,26 @@ app.post('/api/tasks', authenticateToken, authorizeRole(['ADMIN']), async (req, 
     },
     include: { location: true, cleaner: true }
   });
+
+  // 2. Sync to Odoo if location has odooProjectId
+  if (location?.odooProjectId) {
+    try {
+      const odooTask = await OdooTaskService.createTask({
+        name: title,
+        project_id: location.odooProjectId,
+        partner_id: location.odooProjectId, // Usually same as project partner in this simplified flow
+        description: description || ''
+      });
+      
+      await prisma.cleaningTask.update({
+        where: { id: task.id },
+        data: { odooTaskId: odooTask as number }
+      });
+    } catch (error) {
+       console.error('Odoo Task Creation Sync Error:', error);
+    }
+  }
+
   res.json(task);
 });
 
@@ -283,6 +308,72 @@ app.get('/api/users/cleaners', authenticateToken, authorizeRole(['ADMIN']), asyn
 app.get('/api/locations', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
   const locations = await prisma.location.findMany({ include: { customer: { select: { name: true } } } });
   res.json(locations);
+});
+
+// --- SYNC ROUTE ---
+app.post('/api/sync/all', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
+  try {
+    console.log('Starting full Odoo sync...');
+    const hashedDefaultPassword = await bcrypt.hash('password123', 10);
+
+    // 1. Sync Partners -> Customers
+    const partners = await OdooPartnerService.getPartners();
+    for (const p of partners) {
+      if (p.email) {
+        await prisma.user.upsert({
+          where: { email: p.email },
+          update: { name: p.name, odooPartnerId: p.id },
+          create: { 
+            email: p.email, 
+            name: p.name, 
+            password: hashedDefaultPassword, 
+            role: 'CUSTOMER', 
+            odooPartnerId: p.id 
+          }
+        });
+      }
+    }
+
+    // 2. Sync Projects -> Locations
+    const projects = await OdooProjectService.getProjects();
+    for (const pr of projects) {
+       // Find partner in local DB
+       let customerId = (await prisma.user.findFirst({ where: { odooPartnerId: pr.partner_id[0] } }))?.id;
+       
+       if (customerId) {
+         await prisma.location.upsert({
+           where: { odooProjectId: pr.id },
+           update: { name: pr.name, customerId },
+           create: { name: pr.name, address: 'Odoo Project Address', customerId, odooProjectId: pr.id }
+         });
+       }
+    }
+
+    // 3. Sync Tasks
+    const odooTasks = await OdooTaskService.getTasks();
+    for (const t of odooTasks) {
+       const location = await prisma.location.findUnique({ where: { odooProjectId: t.project_id[0] } });
+       if (location) {
+         await prisma.cleaningTask.upsert({
+           where: { odooTaskId: t.id },
+           update: { title: t.name, description: t.description },
+           create: { 
+             title: t.name, 
+             description: t.description, 
+             date: t.date_deadline ? new Date(t.date_deadline) : new Date(),
+             status: 'PLANNED', // Simple mapping
+             locationId: location.id,
+             odooTaskId: t.id
+           }
+         });
+       }
+    }
+
+    res.json({ message: 'Sync completed successfully' });
+  } catch (error) {
+    console.error('Odoo Sync Error:', error);
+    res.status(500).json({ error: 'Sync failed' });
+  }
 });
 
 app.listen(PORT, () => {

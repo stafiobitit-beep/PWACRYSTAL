@@ -3,12 +3,32 @@ import { odoo } from './odoo.base.js';
 export class OdooTaskService {
   static async getTasks(domain: any[] = []) {
     return odoo.execute('project.task', 'search_read', [domain], {
-      fields: ['id', 'name', 'description', 'date_deadline', 'stage_id', 'user_id', 'partner_id'],
+      fields: ['id', 'name', 'description', 'date_deadline', 'stage_id', 'user_id', 'partner_id', 'project_id'],
     });
+  }
+
+  static async createTask(data: { name: string, project_id: number, partner_id?: number, description?: string }) {
+    return odoo.execute('project.task', 'create', [data]);
   }
 
   static async updateTaskStatus(taskId: number, stageId: number) {
     return odoo.execute('project.task', 'write', [[taskId], { stage_id: stageId }]);
+  }
+}
+
+export class OdooProjectService {
+  static async getProjects() {
+    return odoo.execute('project.project', 'search_read', [[]], {
+      fields: ['id', 'name', 'partner_id'],
+    });
+  }
+}
+
+export class OdooPartnerService {
+  static async getPartners(domain: any[] = [['customer_rank', '>', 0]]) {
+    return odoo.execute('res.partner', 'search_read', [domain], {
+      fields: ['id', 'name', 'email', 'phone', 'street', 'city'],
+    });
   }
 }
 

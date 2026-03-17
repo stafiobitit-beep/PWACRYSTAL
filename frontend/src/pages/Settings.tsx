@@ -128,6 +128,31 @@ const Settings: React.FC = () => {
           </form>
         </div>
 
+        <div className="bg-white rounded-[32px] p-6 shadow-sm mb-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+            <Database className="text-primary-600" />
+            Handmatige Sync
+          </h2>
+          <p className="text-sm text-gray-500 mb-6 font-medium">
+            Haal alle klanten, projecten en taken direct op uit Odoo. Dit kan enkele seconden duren.
+          </p>
+          <button
+            onClick={async () => {
+              const id = toast.loading('Synchroniseren met Odoo...');
+              try {
+                await client.post('/sync/all');
+                toast.success('Synchronisatie voltooid!', { id });
+              } catch (error) {
+                toast.error('Synchronisatie mislukt', { id });
+              }
+            }}
+            className="w-full bg-gray-900 text-white font-bold py-4 rounded-2xl active:scale-95 transition-all flex items-center justify-center gap-2"
+          >
+            <Play className="w-5 h-5" />
+            Sync Nu Starten
+          </button>
+        </div>
+
         <div className="bg-orange-50 rounded-[32px] p-6 border border-orange-100 italic text-orange-800 text-sm">
           <strong>Let op:</strong> Deze gegevens worden veilig opgeslagen in de backend en gebruikt voor alle synchronisaties met Odoo.
         </div>
