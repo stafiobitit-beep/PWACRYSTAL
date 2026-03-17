@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
@@ -6,30 +7,47 @@ async function main() {
   console.log('Seeding database...');
   
   // Clear existing
-  await prisma.user.deleteMany();
+  // await prisma.user.deleteMany(); // Keep it safer with upsert
   
+  const hashedPassword = await bcrypt.hash('password123', 10);
+
   // Create Demo Admin
-  await prisma.user.create({
-    data: {
+  await prisma.user.upsert({
+    where: { email: 'admin@example.com' },
+    update: { password: hashedPassword },
+    create: {
       email: 'admin@example.com',
-      password: 'password123',
+      password: hashedPassword,
       name: 'De Baas',
       role: 'ADMIN'
     }
   });
 
   // Create Demo Cleaner
-  await prisma.user.create({
-    data: {
+  await prisma.user.upsert({
+    where: { email: 'cleaner1@example.com' },
+    update: { password: hashedPassword },
+    create: {
       email: 'cleaner1@example.com',
-      password: 'password123',
+      password: hashedPassword,
       name: 'An de Kuis',
       role: 'CLEANER'
     }
   });
 
-  console.log('Admin user created: admin@example.com / password123');
-  console.log('Cleaner user created: cleaner1@example.com / password123');
+  // Create Demo Customer
+  await prisma.user.upsert({
+    where: { email: 'customer1@example.com' },
+    update: { password: hashedPassword },
+    create: {
+      email: 'customer1@example.com',
+      password: hashedPassword,
+      name: 'Klant Kritisch',
+      role: 'CUSTOMER'
+    }
+  });
+
+  console.log('Seeding completed. Password for all: password123');
 }
 
 main()

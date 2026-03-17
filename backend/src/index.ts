@@ -21,20 +21,45 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }
 
 // --- AUTO-SEED FOR DEMO ---
 const autoSeed = async () => {
-  const count = await prisma.user.count();
-  if (count === 0) {
-    console.log('No users found, seeding admin...');
-    const hashedPassword = await bcrypt.hash('password123', 10);
-    await prisma.user.create({
-      data: {
-        email: 'admin@example.com',
-        password: hashedPassword,
-        name: 'De Baas',
-        role: 'ADMIN'
-      }
-    });
-    console.log('Admin user created: admin@example.com / password123');
-  }
+  const hashedPassword = await bcrypt.hash('password123', 10);
+  
+  // Admin
+  await prisma.user.upsert({
+    where: { email: 'admin@example.com' },
+    update: { password: hashedPassword },
+    create: {
+      email: 'admin@example.com',
+      password: hashedPassword,
+      name: 'De Baas',
+      role: 'ADMIN'
+    }
+  });
+
+  // Cleaner
+  await prisma.user.upsert({
+    where: { email: 'cleaner1@example.com' },
+    update: { password: hashedPassword },
+    create: {
+      email: 'cleaner1@example.com',
+      password: hashedPassword,
+      name: 'An de Kuis',
+      role: 'CLEANER'
+    }
+  });
+
+  // Customer
+  await prisma.user.upsert({
+    where: { email: 'customer1@example.com' },
+    update: { password: hashedPassword },
+    create: {
+      email: 'customer1@example.com',
+      password: hashedPassword,
+      name: 'Klant Kritisch',
+      role: 'CUSTOMER'
+    }
+  });
+
+  console.log('Auto-seed completed (upsert used). Demo accounts ready.');
 };
 autoSeed();
 
