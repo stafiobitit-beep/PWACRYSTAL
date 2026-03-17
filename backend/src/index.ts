@@ -101,12 +101,25 @@ app.get('/api/tasks', authenticateToken, async (req: AuthRequest, res) => {
   res.json(tasks);
 });
 
-app.get('/api/tasks/:id', authenticateToken, async (req, res) => {
+app.get('/api/tasks/:id', authenticateToken, async (req: AuthRequest, res) => {
+  const { role, id: userId } = req.user!;
   const task = await prisma.cleaningTask.findUnique({
     where: { id: req.params.id },
     include: { location: true, cleaner: true, messages: { include: { sender: true } }, photos: true, incidents: true }
   });
-  res.json(task);
+
+  if (!task) return res.status(404).json({ message: 'Taak niet gevonden' });
+
+  // Authorization Check
+  if (role === 'ADMIN') {
+    return res.json(task);
+  } else if (role === 'CLEANER' && task.cleanerId === userId) {
+    return res.json(task);
+  } else if (role === 'CUSTOMER' && task.location?.customerId === userId) {
+    return res.json(task);
+  }
+
+  res.status(403).json({ message: 'Geen toegang tot deze taak' });
 });
 
 app.post('/api/tasks', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
@@ -366,6 +379,8 @@ app.post('/api/sync/all', authenticateToken, authorizeRole(['ADMIN']), async (re
 
     // 3. Sync Tasks
     const odooTasks = await OdooTaskService.getTasks();
+    const allUsers = await prisma.user.findMany({ where: { role: 'CLEANER' } });
+
     for (const t of odooTasks) {
        // Filter tasks by selected projects if applicable
        if (selectedProjectIds && Array.isArray(selectedProjectIds) && !selectedProjectIds.includes(t.project_id[0])) {
@@ -374,16 +389,26 @@ app.post('/api/sync/all', authenticateToken, authorizeRole(['ADMIN']), async (re
 
        const location = await prisma.location.findUnique({ where: { odooProjectId: t.project_id[0] } });
        if (location) {
+         // Match cleaner if possible (using name or looking up via Odoo user_id if we had more info)
+         // For now, we'll try to match by name or email if Odoo gives us that.
+         // Odoo 'user_id' is [id, name]. We'll try to find a cleaner with that name in our DB.
+         const cleaner = t.user_id ? allUsers.find((u: any) => u.name === t.user_id[1]) : null;
+
          await prisma.cleaningTask.upsert({
            where: { odooTaskId: t.id },
-           update: { title: t.name, description: t.description },
+           update: { 
+             title: t.name, 
+             description: t.description || '',
+             cleanerId: cleaner?.id || undefined
+           },
            create: { 
              title: t.name, 
-             description: t.description, 
+             description: t.description || '', 
              date: t.date_deadline ? new Date(t.date_deadline) : new Date(),
-             status: 'PLANNED', // Simple mapping
+             status: 'PLANNED',
              locationId: location.id,
-             odooTaskId: t.id
+             odooTaskId: t.id,
+             cleanerId: cleaner?.id
            }
          });
        }
