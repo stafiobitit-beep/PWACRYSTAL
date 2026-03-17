@@ -5,7 +5,7 @@ import BottomNav from '../components/layout/BottomNav';
 import TaskCard from '../components/tasks/TaskCard';
 import { Skeleton, TaskCardSkeleton } from '../components/common/Skeleton';
 import EmptyState from '../components/common/EmptyState';
-import { Filter, Plus, Calendar } from 'lucide-react';
+import { Filter, Plus, Calendar, User } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
   const [tasks, setTasks] = useState<any[]>([]);
@@ -69,7 +69,7 @@ const Dashboard: React.FC = () => {
       <div className="bg-white px-6 pt-12 pb-6 rounded-b-[40px] shadow-sm">
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-2xl font-black text-gray-900">Hallo, {user?.name.split(' ')[0]}!</h1>
+            <h1 className="text-2xl font-black text-gray-900">Hallo, {(user?.name || 'Vriend').split(' ')[0]}!</h1>
             <p className="text-gray-500 font-medium">Je hebt {tasks.length} taken vandaag</p>
           </div>
           <div className="w-12 h-12 bg-primary-100 rounded-2xl flex items-center justify-center">
@@ -124,8 +124,5 @@ const Dashboard: React.FC = () => {
     </div>
   );
 };
-
-// Internal icon requirement
-import { User } from 'lucide-react';
 
 export default Dashboard;
