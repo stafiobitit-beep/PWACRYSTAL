@@ -15,6 +15,27 @@ const JWT_SECRET = process.env.JWT_SECRET || 'supersecret';
 app.use(cors());
 app.use(express.json());
 
+// --- HEALTH CHECK ---
+app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
+
+// --- AUTO-SEED FOR DEMO ---
+const autoSeed = async () => {
+  const count = await prisma.user.count();
+  if (count === 0) {
+    console.log('No users found, seeding admin...');
+    await prisma.user.create({
+      data: {
+        email: 'admin@example.com',
+        password: 'password123',
+        name: 'De Baas',
+        role: 'ADMIN'
+      }
+    });
+    console.log('Admin user created: admin@example.com / password123');
+  }
+};
+autoSeed();
+
 // --- AUTH ROUTES ---
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
