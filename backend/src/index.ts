@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import prisma from './utils/prisma.js';
 import { authenticateToken, authorizeRole, type AuthRequest } from './middleware/auth.js';
-import { OdooTaskService, OdooMessageService, OdooAttachmentService, OdooIncidentService } from './services/odoo.service.js';
+import { OdooTaskService, OdooMessageService, OdooAttachmentService, OdooIncidentService, OdooTimesheetService } from './services/odoo.service.js';
 
 dotenv.config();
 
@@ -72,7 +72,7 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(401).json({ message: 'Invalid credentials' });
   }
 
-  const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET);
+  const token = jwt.sign({ id: user.id, role: user.role, email: user.email, name: user.name }, JWT_SECRET);
   res.json({ token, user: { id: user.id, name: user.name, role: user.role, email: user.email } });
 });
 
@@ -82,11 +82,20 @@ app.get('/api/tasks', authenticateToken, async (req: AuthRequest, res) => {
   
   let tasks;
   if (role === 'ADMIN') {
-    tasks = await prisma.cleaningTask.findMany({ include: { location: true, cleaner: true } });
+    tasks = await prisma.cleaningTask.findMany({ 
+      include: { location: true, cleaner: true } 
+    });
   } else if (role === 'CLEANER') {
-    tasks = await prisma.cleaningTask.findMany({ where: { cleanerId: id }, include: { location: true } });
+    tasks = await prisma.cleaningTask.findMany({ 
+      where: { cleanerId: id }, 
+      include: { location: true } 
+    });
   } else {
-    tasks = await prisma.cleaningTask.findMany({ where: { location: { customerId: id } }, include: { location: true } });
+    // Customer sees tasks for their locations
+    tasks = await prisma.cleaningTask.findMany({ 
+      where: { location: { customerId: id } }, 
+      include: { location: true } 
+    });
   }
   
   res.json(tasks);
@@ -98,6 +107,65 @@ app.get('/api/tasks/:id', authenticateToken, async (req, res) => {
     include: { location: true, cleaner: true, messages: { include: { sender: true } }, photos: true, incidents: true }
   });
   res.json(task);
+});
+
+app.post('/api/tasks', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
+  const { title, description, date, locationId, cleanerId } = req.body;
+  const task = await prisma.cleaningTask.create({
+    data: {
+      title,
+      description,
+      date: new Date(date),
+      status: 'PLANNED',
+      locationId,
+      cleanerId
+    },
+    include: { location: true, cleaner: true }
+  });
+  res.json(task);
+});
+
+app.post('/api/tasks/:id/timer/start', authenticateToken, async (req: AuthRequest, res) => {
+  const task = await prisma.cleaningTask.update({
+    where: { id: req.params.id },
+    data: { timerStartedAt: new Date(), status: 'IN_PROGRESS' }
+  });
+  res.json(task);
+});
+
+app.post('/api/tasks/:id/timer/stop', authenticateToken, async (req: AuthRequest, res) => {
+  const task = await prisma.cleaningTask.findUnique({ where: { id: req.params.id } });
+  if (!task || !task.timerStartedAt) return res.status(400).json({ message: 'Timer not started' });
+
+  const endTime = new Date();
+  const startTime = task.timerStartedAt;
+  const durationInMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
+
+  const timesheet = await prisma.timesheet.create({
+    data: {
+      startTime,
+      endTime,
+      duration: durationInMinutes,
+      taskId: task.id,
+      cleanerId: req.user!.id
+    }
+  });
+
+  // Phase 2: Sync to Odoo
+  if (task.odooTaskId) {
+    try {
+      await OdooTimesheetService.createTimesheet(task.odooTaskId as number, durationInMinutes, `Kuisbeurt door ${req.user!.name}`);
+    } catch (error) {
+      console.error('Odoo Timesheet Sync Error:', error);
+    }
+  }
+
+  await prisma.cleaningTask.update({
+    where: { id: req.params.id },
+    data: { timerStartedAt: null }
+  });
+
+  res.json({ task, timesheet });
 });
 
 app.patch('/api/tasks/:id/status', authenticateToken, async (req, res) => {
@@ -133,7 +201,7 @@ app.post('/api/tasks/:id/messages', authenticateToken, async (req: AuthRequest, 
   // Phase 2: Sync to Odoo
   if (odooTaskId) {
     try {
-      await OdooMessageService.postMessage(odooTaskId, content);
+      await OdooMessageService.postMessage(odooTaskId, content, req.user!.name);
     } catch (error) {
       console.error('Odoo Message Sync Error:', error);
     }
@@ -204,6 +272,17 @@ app.post('/api/settings/odoo', authenticateToken, authorizeRole(['ADMIN']), asyn
   });
   
   res.json(config);
+});
+
+// --- HELPER ROUTES FOR UI ---
+app.get('/api/users/cleaners', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
+  const cleaners = await prisma.user.findMany({ where: { role: 'CLEANER' }, select: { id: true, name: true } });
+  res.json(cleaners);
+});
+
+app.get('/api/locations', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
+  const locations = await prisma.location.findMany({ include: { customer: { select: { name: true } } } });
+  res.json(locations);
 });
 
 app.listen(PORT, () => {

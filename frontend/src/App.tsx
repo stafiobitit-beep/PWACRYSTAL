@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import TaskDetail from './pages/TaskDetail';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
+import CreateTask from './pages/CreateTask';
 
 const App: React.FC = () => {
   return (
@@ -17,6 +18,7 @@ const App: React.FC = () => {
         <Route path="/tasks/:id" element={<TaskDetail />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/create-task" element={<CreateTask />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Router>

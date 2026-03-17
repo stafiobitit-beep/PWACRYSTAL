@@ -50,6 +50,9 @@ model CleaningTask {
   messages    TaskMessage[]
   photos      TaskPhoto[]
   incidents   Incident[]
+  timesheets  Timesheet[]
+
+  timerStartedAt DateTime? // When the cleaner clicks "Start"
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -85,6 +88,17 @@ model Incident {
   
   taskId      String
   task        CleaningTask @relation(fields: [taskId], references: [id])
+}
+
+model Timesheet {
+  id          String   @id @default(uuid())
+  startTime   DateTime
+  endTime     DateTime
+  duration    Int      // Duration in minutes
+  taskId      String
+  task        CleaningTask @relation(fields: [taskId], references: [id])
+  cleanerId   String
+  createdAt   DateTime @default(now())
 }
 
 model OdooConfig {

@@ -13,13 +13,26 @@ export class OdooTaskService {
 }
 
 export class OdooMessageService {
-  static async postMessage(taskId: number, content: string) {
+  static async postMessage(taskId: number, content: string, senderName: string) {
     return odoo.execute('mail.message', 'create', [{
       model: 'project.task',
       res_id: taskId,
-      body: content,
+      body: `<b>${senderName}</b>: ${content}`,
       message_type: 'comment',
       subtype_id: 1, // Note
+    }]);
+  }
+}
+
+export class OdooTimesheetService {
+  static async createTimesheet(taskId: number, minutes: number, description: string) {
+    const hours = minutes / 60;
+    return odoo.execute('account.analytic.line', 'create', [{
+      name: description || 'Cleaning Session',
+      unit_amount: hours,
+      task_id: taskId,
+      // project_id is usually inferred from task_id in Odoo, 
+      // but sometimes needed explicitly. We'll stick to task_id for now.
     }]);
   }
 }

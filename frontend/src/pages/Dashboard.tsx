@@ -115,7 +115,10 @@ const Dashboard: React.FC = () => {
 
       {/* FAB for Admin/Manager */}
       {user?.role === 'ADMIN' && (
-        <button className="fixed bottom-28 right-6 bg-primary-600 text-white p-5 rounded-full shadow-xl shadow-primary-200 active:scale-90 transition-all z-40">
+        <button 
+          onClick={() => navigate('/create-task')}
+          className="fixed bottom-28 right-6 bg-primary-600 text-white p-5 rounded-full shadow-xl shadow-primary-200 active:scale-90 transition-all z-40"
+        >
           <Plus className="w-8 h-8" />
         </button>
       )}
