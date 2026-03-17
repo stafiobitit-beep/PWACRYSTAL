@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 import prisma from './utils/prisma.js';
 import { authenticateToken, authorizeRole, type AuthRequest } from './middleware/auth.js';
 import { OdooTaskService, OdooMessageService, OdooAttachmentService, OdooIncidentService } from './services/odoo.service.js';
@@ -23,10 +24,11 @@ const autoSeed = async () => {
   const count = await prisma.user.count();
   if (count === 0) {
     console.log('No users found, seeding admin...');
+    const hashedPassword = await bcrypt.hash('password123', 10);
     await prisma.user.create({
       data: {
         email: 'admin@example.com',
-        password: 'password123',
+        password: hashedPassword,
         name: 'De Baas',
         role: 'ADMIN'
       }
@@ -41,7 +43,7 @@ app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   const user = await prisma.user.findUnique({ where: { email } });
 
-  if (!user || user.password !== password) {
+  if (!user || !(await bcrypt.compare(password, user.password))) {
     return res.status(401).json({ message: 'Invalid credentials' });
   }
 
