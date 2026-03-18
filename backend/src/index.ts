@@ -88,18 +88,42 @@ app.get('/api/tasks', authenticateToken, async (req: AuthRequest, res) => {
   let tasks;
   if (role === 'ADMIN') {
     tasks = await prisma.cleaningTask.findMany({ 
-      include: { location: true, cleaner: true } 
+      include: { 
+        location: { include: { customer: { select: { name: true } } } }, 
+        cleaner: { select: { name: true } },
+        messages: { 
+          orderBy: { timestamp: 'desc' }, 
+          take: 1,
+          include: { sender: { select: { name: true } } }
+        }
+      } 
     });
   } else if (role === 'CLEANER') {
     tasks = await prisma.cleaningTask.findMany({ 
       where: { cleanerId: id }, 
-      include: { location: true } 
+      include: { 
+        location: { include: { customer: { select: { name: true } } } }, 
+        cleaner: { select: { name: true } },
+        messages: { 
+          orderBy: { timestamp: 'desc' }, 
+          take: 1,
+          include: { sender: { select: { name: true } } }
+        }
+      } 
     });
   } else {
     // Customer sees tasks for their locations
     tasks = await prisma.cleaningTask.findMany({ 
       where: { location: { customerId: id } }, 
-      include: { location: true } 
+      include: { 
+        location: { include: { customer: { select: { name: true } } } }, 
+        cleaner: { select: { name: true } },
+        messages: { 
+          orderBy: { timestamp: 'desc' }, 
+          take: 1,
+          include: { sender: { select: { name: true } } }
+        }
+      } 
     });
   }
   
@@ -111,7 +135,21 @@ app.get('/api/tasks/:id', authenticateToken, async (req: AuthRequest, res) => {
     const { role, id: userId } = req.user!;
     const task = await prisma.cleaningTask.findUnique({
       where: { id: req.params.id as string },
-      include: { location: true, cleaner: true, messages: { include: { sender: true } }, photos: true, incidents: true }
+      include: { 
+        location: {
+          include: {
+            customer: { select: { id: true, name: true, email: true } }
+          }
+        },
+        cleaner: { select: { id: true, name: true } },
+        manager: { select: { id: true, name: true } },
+        messages: {
+          include: { sender: { select: { id: true, name: true, role: true } } },
+          orderBy: { timestamp: 'asc' }
+        },
+        photos: { orderBy: { createdAt: 'desc' } },
+        incidents: { orderBy: { createdAt: 'desc' } }
+      }
     });
 
     if (!task) return res.status(404).json({ message: 'Taak niet gevonden' });
@@ -386,19 +424,18 @@ app.post('/api/sync/all', authenticateToken, authorizeRole(['ADMIN']), async (re
     // 1. Sync Partners -> Customers
     const partners = await OdooPartnerService.getPartners();
     for (const p of partners) {
-      if (p.email) {
-        await prisma.user.upsert({
-          where: { email: p.email },
-          update: { name: p.name, odooPartnerId: p.id },
-          create: { 
-            email: p.email, 
-            name: p.name, 
-            password: hashedDefaultPassword, 
-            role: 'CUSTOMER', 
-            odooPartnerId: p.id 
-          }
-        });
-      }
+      const email = p.email || `odoo_partner_${p.id}@placeholder.local`;
+      await prisma.user.upsert({
+        where: { email },
+        update: { name: p.name, odooPartnerId: p.id },
+        create: { 
+          email, 
+          name: p.name, 
+          password: hashedDefaultPassword, 
+          role: 'CUSTOMER', 
+          odooPartnerId: p.id 
+        }
+      });
     }
 
     // 2. Sync Projects -> Locations
@@ -409,9 +446,16 @@ app.post('/api/sync/all', authenticateToken, authorizeRole(['ADMIN']), async (re
     }
 
     for (const pr of projects) {
-       // Find partner in local DB
-       let customerId = (await prisma.user.findFirst({ where: { odooPartnerId: pr.partner_id[0] } }))?.id;
+       const partnerId = Array.isArray(pr.partner_id) ? pr.partner_id[0] : null;
        
+       let customerId = partnerId ? (await prisma.user.findFirst({ where: { odooPartnerId: partnerId } }))?.id : null;
+       
+       if (!customerId) {
+         // Fallback to first ADMIN if no customer match
+         const firstAdmin = await prisma.user.findFirst({ where: { role: 'ADMIN' } });
+         customerId = firstAdmin?.id || null;
+       }
+
        if (customerId) {
          await prisma.location.upsert({
            where: { odooProjectId: pr.id },

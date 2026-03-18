@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, MapPin, Clock, ChevronRight } from 'lucide-react';
+import { Calendar, MapPin, Clock, ChevronRight, User } from 'lucide-react';
 
 interface TaskCardProps {
   task: any;
@@ -43,6 +43,12 @@ const TaskCard: React.FC<TaskCardProps> = ({ task }) => {
           <MapPin className="w-3 h-3" />
           {task.location?.name}
         </p>
+        {task.location?.customer?.name && (
+          <p className="text-gray-400 text-xs flex items-center gap-1 mt-0.5">
+            <User className="w-3 h-3" />
+            {task.location.customer.name}
+          </p>
+        )}
       </div>
       <ChevronRight className="text-gray-300 w-6 h-6" />
     </div>

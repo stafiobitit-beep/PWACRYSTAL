@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import client from '../api/client';
 import { toast } from 'react-hot-toast';
 import { ArrowLeft, Send, Camera, AlertCircle, CheckCircle2, Play, MessageSquare, Image as ImageIcon, Clock, StopCircle } from 'lucide-react';
@@ -12,7 +12,10 @@ const TaskDetail: React.FC = () => {
   const [task, setTask] = useState<any>(null);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'CHAT' | 'PHOTOS' | 'INFO'>('CHAT');
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState<'CHAT' | 'PHOTOS' | 'INFO'>(
+    (location.state as any)?.tab || 'CHAT'
+  );
   const [timerInSeconds, setTimerInSeconds] = useState(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -56,6 +59,17 @@ const TaskDetail: React.FC = () => {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [task?.messages, activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'CHAT') return;
+    const interval = setInterval(async () => {
+      try {
+        const { data } = await client.get(`/tasks/${id}`);
+        setTask(data);
+      } catch (e) {}
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [id, activeTab]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -299,6 +313,39 @@ const TaskDetail: React.FC = () => {
                 <p className="text-primary-600/70 font-medium text-sm">{task.location?.address}</p>
               </div>
             </section>
+
+            {task.location?.customer && (
+              <section>
+                <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-3">Klant</h3>
+                <div className="p-5 bg-green-50 rounded-[24px] border border-green-100">
+                  <p className="font-black text-green-900 mb-1">{task.location.customer.name}</p>
+                  <p className="text-green-600/70 font-medium text-sm">{task.location.customer.email}</p>
+                </div>
+              </section>
+            )}
+
+            {task.cleaner && (
+              <section>
+                <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-3">Toegewezen Kuiser</h3>
+                <div className="p-5 bg-blue-50 rounded-[24px] border border-blue-100">
+                  <p className="font-black text-blue-900">{task.cleaner.name}</p>
+                </div>
+              </section>
+            )}
+
+            {task.incidents?.length > 0 && (
+              <section>
+                <h3 className="text-xs font-black uppercase tracking-widest text-red-400 mb-3">Incidenten</h3>
+                <div className="space-y-2">
+                  {task.incidents.map((inc: any) => (
+                    <div key={inc.id} className="p-4 bg-red-50 rounded-[20px] border border-red-100">
+                      <p className="font-bold text-red-900 text-sm">{inc.description}</p>
+                      <p className="text-xs text-red-400 mt-1">{new Date(inc.createdAt).toLocaleString('nl-BE')}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         )}
       </div>
