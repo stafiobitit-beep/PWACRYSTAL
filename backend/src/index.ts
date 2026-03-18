@@ -115,7 +115,7 @@ app.get('/api/tasks/:id', authenticateToken, async (req: AuthRequest, res) => {
     return res.json(task);
   } else if (role === 'CLEANER' && task.cleanerId === userId) {
     return res.json(task);
-  } else if (role === 'CUSTOMER' && task.location?.customerId === userId) {
+  } else if (role === 'CUSTOMER' && (task as any).location?.customerId === userId) {
     return res.json(task);
   }
 

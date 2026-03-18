@@ -40,9 +40,12 @@ class OdooService {
   private getClient(path: string) {
     if (!this.config) throw new Error('Odoo config not loaded');
     const url = new URL(path, this.config.url);
-    return xmlrpc.createSecureClient({
+    const isHttps = url.protocol === 'https:';
+    const clientCreator = isHttps ? xmlrpc.createSecureClient : xmlrpc.createClient;
+    
+    return clientCreator({
       host: url.hostname,
-      port: url.port ? parseInt(url.port) : 443,
+      port: url.port ? parseInt(url.port) : (isHttps ? 443 : 80),
       path: url.pathname,
     });
   }
