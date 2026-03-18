@@ -63,6 +63,170 @@ const autoSeed = async () => {
 };
 autoSeed().catch(err => console.error('Auto-seed failed:', err));
 
+// --- ODOO SYNC HELPERS ---
+
+export async function syncOdooData(selectedProjectIds?: number[]) {
+  console.log('Starting sync...', selectedProjectIds ? `Filtered: ${selectedProjectIds}` : 'All');
+  const results = { partners: 0, locations: 0, tasks: 0 };
+  const errors: string[] = [];
+
+  try {
+    const hashedDefaultPassword = await bcrypt.hash('password123', 10);
+
+    // 1. Sync Partners -> Customers
+    try {
+      const partners = await OdooPartnerService.getPartners();
+      for (const p of partners) {
+        try {
+          const email = p.email || `odoo_partner_${p.id}@placeholder.local`;
+          await prisma.user.upsert({
+            where: { email },
+            update: { name: p.name, odooPartnerId: p.id },
+            create: { 
+              email, 
+              name: p.name, 
+              password: hashedDefaultPassword, 
+              role: 'CUSTOMER', 
+              odooPartnerId: p.id 
+            }
+          });
+          results.partners++;
+        } catch (e: any) {
+          errors.push(`Partner sync failed for ${p.name}: ${e.message}`);
+        }
+      }
+    } catch (e: any) {
+      errors.push(`Failed to fetch partners from Odoo: ${e.message}`);
+    }
+
+    // 2. Sync Projects -> Locations
+    try {
+      let projects = await OdooProjectService.getProjects();
+      if (selectedProjectIds && Array.isArray(selectedProjectIds)) {
+        projects = projects.filter((p: any) => selectedProjectIds.includes(p.id));
+      }
+
+      for (const pr of projects) {
+        try {
+          const partnerId = Array.isArray(pr.partner_id) ? pr.partner_id[0] : null;
+          let customerId = partnerId ? (await prisma.user.findFirst({ where: { odooPartnerId: partnerId } }))?.id : null;
+          
+          if (!customerId) {
+            const firstAdmin = await prisma.user.findFirst({ where: { role: 'ADMIN' } });
+            customerId = firstAdmin?.id || null;
+          }
+
+          if (customerId) {
+            await prisma.location.upsert({
+              where: { odooProjectId: pr.id },
+              update: { name: pr.name, customerId },
+              create: { name: pr.name, address: 'Odoo Project Address', customerId, odooProjectId: pr.id }
+            });
+            results.locations++;
+          } else {
+            errors.push(`Project "${pr.name}" skipped: No customer or admin fallback found`);
+          }
+        } catch (e: any) {
+          errors.push(`Project sync failed for ${pr.name}: ${e.message}`);
+        }
+      }
+    } catch (e: any) {
+      errors.push(`Failed to fetch projects from Odoo: ${e.message}`);
+    }
+
+    // 3. Sync Tasks
+    try {
+      const odooTasks = await OdooTaskService.getTasks();
+      const allUsers = await prisma.user.findMany({ where: { role: 'CLEANER' } });
+
+      for (const t of odooTasks) {
+        try {
+          if (selectedProjectIds && Array.isArray(selectedProjectIds) && !selectedProjectIds.includes(t.project_id[0])) {
+            continue;
+          }
+
+          const location = await prisma.location.findUnique({ where: { odooProjectId: t.project_id[0] } });
+          if (location) {
+            const cleaner = t.user_id ? allUsers.find((u: any) => u.name === t.user_id[1]) : null;
+            const taskData: any = {
+              title: t.name,
+              description: t.description || '',
+            };
+            if (cleaner?.id) {
+              taskData.cleanerId = cleaner.id;
+            }
+
+            await prisma.cleaningTask.upsert({
+              where: { odooTaskId: t.id },
+              update: taskData,
+              create: { 
+                title: t.name, 
+                description: t.description || '', 
+                date: t.date_deadline ? new Date(t.date_deadline) : new Date(),
+                status: 'PLANNED',
+                locationId: location.id,
+                odooTaskId: t.id,
+                ...taskData
+              }
+            });
+            results.tasks++;
+          }
+        } catch (e: any) {
+          errors.push(`Task sync failed for "${t.name}": ${e.message}`);
+        }
+      }
+    } catch (e: any) {
+      errors.push(`Failed to fetch tasks from Odoo: ${e.message}`);
+    }
+
+    return { results, errors };
+  } catch (error: any) {
+    console.error('Core sync logic failed:', error);
+    throw error;
+  }
+}
+
+async function runAutoSync() {
+  try {
+    const config = await prisma.odooConfig.findFirst({
+      where: { isActive: true },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (!config) {
+      console.log('Auto-sync skipped: No active Odoo config');
+      return;
+    }
+
+    let projectIds: number[] | undefined;
+    if (config.syncedProjectIds) {
+      try {
+        projectIds = JSON.parse(config.syncedProjectIds);
+      } catch (e) {
+        console.error('Failed to parse syncedProjectIds:', e);
+      }
+    }
+
+    console.log('Background auto-sync starting...');
+    const { results, errors } = await syncOdooData(projectIds);
+    
+    await prisma.odooConfig.update({
+      where: { id: config.id },
+      data: { lastSyncedAt: new Date() }
+    });
+
+    console.log(`Background auto-sync completed. Results:`, results, `Errors:`, errors.length);
+  } catch (err) {
+    console.error('Background auto-sync critical failure:', err);
+  }
+}
+
+// Start auto-sync interval
+setTimeout(() => {
+  runAutoSync();
+  setInterval(runAutoSync, 5 * 60 * 1000); // Every 5 minutes
+}, 15000); // 15 seconds after boot
+
 // --- AUTH ROUTES ---
 app.post('/api/auth/login', async (req, res) => {
   try {
@@ -461,99 +625,35 @@ app.get('/api/odoo/projects', authenticateToken, authorizeRole(['ADMIN']), async
 // --- SYNC ROUTE ---
 app.post('/api/sync/all', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
   try {
-    const { selectedProjectIds } = req.body; // Array of IDs or undefined for all
-    console.log('Starting Odoo sync...', selectedProjectIds ? `Filtered: ${selectedProjectIds}` : 'All');
-    const hashedDefaultPassword = await bcrypt.hash('password123', 10);
+    const { selectedProjectIds } = req.body; 
+    
+    // Save selection to config
+    const config = await prisma.odooConfig.findFirst({
+      where: { isActive: true },
+      orderBy: { createdAt: 'desc' }
+    });
 
-    // 1. Sync Partners -> Customers
-    const partners = await OdooPartnerService.getPartners();
-    for (const p of partners) {
-      const email = p.email || `odoo_partner_${p.id}@placeholder.local`;
-      await prisma.user.upsert({
-        where: { email },
-        update: { name: p.name, odooPartnerId: p.id },
-        create: { 
-          email, 
-          name: p.name, 
-          password: hashedDefaultPassword, 
-          role: 'CUSTOMER', 
-          odooPartnerId: p.id 
+    if (config && selectedProjectIds) {
+      await prisma.odooConfig.update({
+        where: { id: config.id },
+        data: { 
+          syncedProjectIds: JSON.stringify(selectedProjectIds),
+          lastSyncedAt: new Date()
         }
       });
     }
 
-    // 2. Sync Projects -> Locations
-    let projects = await OdooProjectService.getProjects();
+    const { results, errors } = await syncOdooData(selectedProjectIds);
     
-    if (selectedProjectIds && Array.isArray(selectedProjectIds)) {
-      projects = projects.filter((p: any) => selectedProjectIds.includes(p.id));
-    }
-
-    for (const pr of projects) {
-       const partnerId = Array.isArray(pr.partner_id) ? pr.partner_id[0] : null;
-       
-       let customerId = partnerId ? (await prisma.user.findFirst({ where: { odooPartnerId: partnerId } }))?.id : null;
-       
-       if (!customerId) {
-         // Fallback to first ADMIN if no customer match
-         const firstAdmin = await prisma.user.findFirst({ where: { role: 'ADMIN' } });
-         customerId = firstAdmin?.id || null;
-       }
-
-       if (customerId) {
-         await prisma.location.upsert({
-           where: { odooProjectId: pr.id },
-           update: { name: pr.name, customerId },
-           create: { name: pr.name, address: 'Odoo Project Address', customerId, odooProjectId: pr.id }
-         });
-       }
-    }
-
-    // 3. Sync Tasks
-    const odooTasks = await OdooTaskService.getTasks();
-    const allUsers = await prisma.user.findMany({ where: { role: 'CLEANER' } });
-
-    for (const t of odooTasks) {
-       // Filter tasks by selected projects if applicable
-       if (selectedProjectIds && Array.isArray(selectedProjectIds) && !selectedProjectIds.includes(t.project_id[0])) {
-         continue;
-       }
-
-       const location = await prisma.location.findUnique({ where: { odooProjectId: t.project_id[0] } });
-       if (location) {
-         // Match cleaner if possible (using name or looking up via Odoo user_id if we had more info)
-         // For now, we'll try to match by name or email if Odoo gives us that.
-         // Odoo 'user_id' is [id, name]. We'll try to find a cleaner with that name in our DB.
-          const cleaner = t.user_id ? allUsers.find((u: any) => u.name === t.user_id[1]) : null;
-
-          const taskData: any = {
-            title: t.name,
-            description: t.description || '',
-          };
-          if (cleaner?.id) {
-            taskData.cleanerId = cleaner.id;
-          }
-
-          await prisma.cleaningTask.upsert({
-            where: { odooTaskId: t.id },
-            update: taskData,
-            create: { 
-              title: t.name, 
-              description: t.description || '', 
-              date: t.date_deadline ? new Date(t.date_deadline) : new Date(),
-              status: 'PLANNED',
-              locationId: location.id,
-              odooTaskId: t.id,
-              ...taskData
-            }
-          });
-       }
-    }
-
-    res.json({ message: 'Sync completed successfully' });
+    res.json({ 
+      message: errors.length > 0 ? 'Sync voltooid met waarschuwingen' : 'Sync succesvol voltooid', 
+      results, 
+      warnings: errors 
+    });
   } catch (error: any) {
     console.error('Odoo Sync Error:', error);
-    res.status(500).json({ error: `Sync failed: ${error.message || 'Unknown error'}` });
+    // Only return 500 if the whole process crashed (e.g. Odoo unreachable)
+    res.status(500).json({ error: `Sync kritiek gefaald: ${error.message || 'Unknown error'}` });
   }
 });
 

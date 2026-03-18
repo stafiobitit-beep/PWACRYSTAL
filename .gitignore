@@ -8,3 +8,4 @@ backend/dev.db
 backend/dev.db-journal
 frontend/dist
 backend/dist
+build_errors.zip

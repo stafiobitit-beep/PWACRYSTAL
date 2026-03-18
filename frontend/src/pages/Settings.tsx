@@ -16,13 +16,31 @@ const Settings: React.FC = () => {
   const [availableProjects, setAvailableProjects] = useState<any[]>([]);
   const [selectedProjectIds, setSelectedProjectIds] = useState<number[]>([]);
   const [fetchingProjects, setFetchingProjects] = useState(false);
+  const [syncWarnings, setSyncWarnings] = useState<string[]>([]);
+  const [syncResults, setSyncResults] = useState<any>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     const fetchConfig = async () => {
       try {
         const { data } = await client.get('/settings/odoo');
-        setConfig(data);
+        setConfig({
+          url: data.url || '',
+          db: data.db || '',
+          username: data.username || '',
+          apiKey: data.apiKey || '',
+        });
+        if (data.syncedProjectIds) {
+          try {
+            setSelectedProjectIds(JSON.parse(data.syncedProjectIds));
+          } catch (e) {
+            console.error('Error parsing syncedProjectIds', e);
+          }
+        }
+        if (data.lastSyncedAt) {
+          setLastSyncedAt(data.lastSyncedAt);
+        }
       } catch (error) {
         console.error('Error fetching settings', error);
       } finally {
@@ -77,11 +95,21 @@ const Settings: React.FC = () => {
       return;
     }
     const id = toast.loading('Synchroniseren met Odoo...');
+    setSyncWarnings([]);
+    setSyncResults(null);
     try {
-      await client.post('/sync/all', { selectedProjectIds });
-      toast.success('Synchronisatie voltooid!', { id });
-    } catch (error) {
-      toast.error('Synchronisatie mislukt', { id });
+      const { data } = await client.post('/sync/all', { selectedProjectIds });
+      setSyncResults(data.results);
+      if (data.warnings && data.warnings.length > 0) {
+        setSyncWarnings(data.warnings);
+        toast.success('Sync voltooid met waarschuwingen', { id });
+      } else {
+        toast.success('Synchronisatie succesvol voltooid!', { id });
+      }
+      setLastSyncedAt(new Date().toISOString());
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.error || 'Synchronisatie mislukt';
+      toast.error(errorMsg, { id });
     }
   };
 
@@ -93,7 +121,14 @@ const Settings: React.FC = () => {
         <button onClick={() => navigate(-1)} className="p-2 -ml-2 rounded-xl active:bg-gray-100">
           <ArrowLeft className="w-6 h-6" />
         </button>
-        <h1 className="text-2xl font-black text-gray-900">Settings</h1>
+        <div className="flex-1">
+          <h1 className="text-2xl font-black text-gray-900">Settings</h1>
+          {lastSyncedAt && (
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-1">
+              Laatst gesynct: {new Date(lastSyncedAt).toLocaleString('nl-BE')}
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="p-6">
@@ -226,6 +261,49 @@ const Settings: React.FC = () => {
             <RefreshCw className={`w-6 h-6 ${fetchingProjects ? 'animate-spin' : ''}`} />
             GESELECTEERDE SYNCEN ({selectedProjectIds.length})
           </button>
+
+          {syncResults && (
+            <div className="mt-6 grid grid-cols-3 gap-2">
+              <div className="bg-blue-50 p-3 rounded-2xl text-center">
+                <div className="text-blue-600 font-black text-lg">{syncResults.partners}</div>
+                <div className="text-[10px] text-blue-400 font-bold uppercase">Klanten</div>
+              </div>
+              <div className="bg-purple-50 p-3 rounded-2xl text-center">
+                <div className="text-purple-600 font-black text-lg">{syncResults.locations}</div>
+                <div className="text-[10px] text-purple-400 font-bold uppercase">Locaties</div>
+              </div>
+              <div className="bg-green-50 p-3 rounded-2xl text-center">
+                <div className="text-green-600 font-black text-lg">{syncResults.tasks}</div>
+                <div className="text-[10px] text-green-400 font-bold uppercase">Taken</div>
+              </div>
+            </div>
+          )}
+
+          {syncWarnings.length > 0 && (
+            <div className="mt-6 bg-red-50 rounded-3xl p-5 border border-red-100">
+              <h3 className="text-red-800 font-bold text-sm mb-3 flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                Aandachtspunten ({syncWarnings.length})
+              </h3>
+              <ul className="space-y-2 max-h-40 overflow-y-auto pr-2 no-scrollbar">
+                {syncWarnings.map((warning, i) => (
+                  <li key={i} className="text-[11px] text-red-600 font-medium leading-relaxed bg-white/50 p-2 rounded-xl border border-red-50/50">
+                    {warning}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-blue-600 rounded-[32px] p-6 shadow-xl shadow-blue-100 mb-6 flex items-center gap-4">
+          <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center">
+            <RefreshCw className="w-6 h-6 text-white animate-spin" />
+          </div>
+          <div>
+            <h3 className="text-white font-bold">Auto-Sync actief</h3>
+            <p className="text-blue-100 text-xs">Wijzigingen in Odoo worden elke 5 minuten automatisch verwerkt.</p>
+          </div>
         </div>
 
         <div className="bg-orange-50 rounded-[32px] p-6 border border-orange-100 italic text-orange-800 text-sm">
