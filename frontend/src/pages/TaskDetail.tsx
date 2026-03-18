@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import client from '../api/client';
 import { toast } from 'react-hot-toast';
-import { ArrowLeft, Send, Camera, AlertCircle, CheckCircle2, Play, MessageSquare, Image as ImageIcon, Clock, StopCircle } from 'lucide-react';
+import { ArrowLeft, Send, Camera, AlertCircle, CheckCircle2, Play, MessageSquare, Image as ImageIcon, Clock, StopCircle, MapPin } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -206,24 +206,73 @@ const TaskDetail: React.FC = () => {
         )}
       </div>
 
-      {/* Timer Bar (Cleaner only) */}
-      {isCleaner && (
-        <div className={`p-4 flex items-center justify-between transition-all duration-500 shadow-inner ${task.timerStartedAt ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-400'}`}>
-          <div className="flex items-center gap-3">
-            <Clock className={`w-5 h-5 ${task.timerStartedAt ? 'animate-pulse' : ''}`} />
-            <span className="font-black text-xl tracking-tighter font-mono">
-              {task.timerStartedAt ? formatTime(timerInSeconds) : '00:00:00'}
+      {/* Timer Bar — only for the assigned cleaner */}
+      {isCleaner && task.cleanerId === user.id && (
+        <div className={`transition-all duration-500 ${
+          task.timerStartedAt 
+            ? 'bg-primary-600 text-white' 
+            : 'bg-gray-100 text-gray-600'
+        }`}>
+          {/* Location context bar */}
+          <div className={`px-4 pt-3 pb-1 flex items-center gap-2 text-xs font-bold ${
+            task.timerStartedAt ? 'text-white/70' : 'text-gray-400'
+          }`}>
+            <MapPin className="w-3 h-3 shrink-0" />
+            <span className="truncate">
+              {task.location?.name}
+              {task.location?.address ? ` — ${task.location.address}` : ''}
             </span>
           </div>
-          {task.timerStartedAt ? (
-            <button onClick={handleStopTimer} className="bg-white text-primary-600 px-6 py-2 rounded-2xl font-black text-sm shadow-xl active:scale-95 transition-all">
-              STOP
-            </button>
-          ) : (
-            <button onClick={handleStartTimer} className="bg-primary-600 text-white px-6 py-2 rounded-2xl font-black text-sm shadow-xl active:scale-95 transition-all border border-white/20">
-              START
-            </button>
-          )}
+
+          {/* Timer controls */}
+          <div className="px-4 pb-3 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <Clock className={`w-5 h-5 ${task.timerStartedAt ? 'animate-pulse' : ''}`} />
+              <div>
+                <span className="font-black text-xl tracking-tighter font-mono">
+                  {task.timerStartedAt ? formatTime(timerInSeconds) : '00:00:00'}
+                </span>
+                {task.timerStartedAt && (
+                  <p className="text-[10px] font-medium opacity-60 -mt-0.5">
+                    Gestart om {new Date(task.timerStartedAt).toLocaleTimeString(
+                      'nl-BE', { hour: '2-digit', minute: '2-digit' }
+                    )}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {task.timerStartedAt ? (
+              <button
+                onClick={handleStopTimer}
+                className="bg-white text-primary-600 px-6 py-2.5 rounded-2xl 
+                           font-black text-sm shadow-xl active:scale-95 
+                           transition-all flex items-center gap-2"
+              >
+                <StopCircle className="w-4 h-4" />
+                STOP
+              </button>
+            ) : (
+              <button
+                onClick={handleStartTimer}
+                className="bg-primary-600 text-white px-6 py-2.5 rounded-2xl 
+                           font-black text-sm shadow-xl active:scale-95 transition-all 
+                           border border-primary-500 flex items-center gap-2"
+              >
+                <Play className="w-4 h-4" />
+                START
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* If cleaner is logged in but NOT assigned to this task */}
+      {isCleaner && task.cleanerId !== user.id && (
+        <div className="bg-amber-50 px-4 py-3 flex items-center gap-2 
+                        text-amber-700 text-xs font-bold border-b border-amber-100">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          Je bent niet de toegewezen kuiser voor deze taak
         </div>
       )}
 
@@ -343,6 +392,43 @@ const TaskDetail: React.FC = () => {
                       <p className="text-xs text-red-400 mt-1">{new Date(inc.createdAt).toLocaleString('nl-BE')}</p>
                     </div>
                   ))}
+                </div>
+              </section>
+            )}
+
+            {task.timesheets?.length > 0 && (
+              <section>
+                <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-3">
+                  Gewerkte Uren
+                </h3>
+                <div className="space-y-2">
+                  {task.timesheets.map((ts: any) => {
+                    const hours = Math.floor(ts.duration / 60);
+                    const mins = ts.duration % 60;
+                    return (
+                      <div key={ts.id} 
+                           className="p-4 bg-gray-50 rounded-[20px] border 
+                                      border-gray-100 flex justify-between items-center">
+                        <div>
+                          <p className="font-black text-gray-900 text-sm">
+                            {hours > 0 ? `${hours}u ` : ''}{mins}min
+                          </p>
+                          <p className="text-xs text-gray-400 font-medium mt-0.5">
+                            {new Date(ts.startTime).toLocaleString('nl-BE', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
+                        <p className="text-xs font-bold text-primary-600 
+                                      bg-primary-50 px-3 py-1 rounded-full">
+                          {ts.duration} min
+                        </p>
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
             )}

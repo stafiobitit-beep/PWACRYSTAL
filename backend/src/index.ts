@@ -148,7 +148,10 @@ app.get('/api/tasks/:id', authenticateToken, async (req: AuthRequest, res) => {
           orderBy: { timestamp: 'asc' }
         },
         photos: { orderBy: { createdAt: 'desc' } },
-        incidents: { orderBy: { createdAt: 'desc' } }
+        incidents: { orderBy: { createdAt: 'desc' } },
+        timesheets: {
+          orderBy: { startTime: 'desc' }
+        }
       }
     });
 
@@ -223,11 +226,31 @@ app.post('/api/tasks', authenticateToken, authorizeRole(['ADMIN']), async (req, 
 
 app.post('/api/tasks/:id/timer/start', authenticateToken, async (req: AuthRequest, res) => {
   try {
-    const task = await prisma.cleaningTask.update({
-      where: { id: req.params.id as string },
-      data: { timerStartedAt: new Date(), status: 'IN_PROGRESS' }
+    const task = await prisma.cleaningTask.findUnique({
+      where: { id: req.params.id as string }
     });
-    res.json(task);
+
+    if (!task) {
+      return res.status(404).json({ message: 'Taak niet gevonden' });
+    }
+
+    // Only the assigned cleaner can start/stop the timer
+    if (task.cleanerId !== req.user!.id) {
+      return res.status(403).json({ 
+        message: 'Enkel de toegewezen kuiser kan de timer bedienen' 
+      });
+    }
+
+    const updated = await prisma.cleaningTask.update({
+      where: { id: req.params.id as string },
+      data: { timerStartedAt: new Date(), status: 'IN_PROGRESS' },
+      include: {
+        location: true,
+        cleaner: { select: { id: true, name: true } }
+      }
+    });
+
+    res.json(updated);
   } catch (e) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -235,8 +258,25 @@ app.post('/api/tasks/:id/timer/start', authenticateToken, async (req: AuthReques
 
 app.post('/api/tasks/:id/timer/stop', authenticateToken, async (req: AuthRequest, res) => {
   try {
-    const task = await prisma.cleaningTask.findUnique({ where: { id: req.params.id as string } });
-    if (!task || !task.timerStartedAt) return res.status(400).json({ message: 'Timer not started' });
+    const task = await prisma.cleaningTask.findUnique({
+      where: { id: req.params.id as string },
+      include: { location: true }
+    });
+
+    if (!task) {
+      return res.status(404).json({ message: 'Taak niet gevonden' });
+    }
+
+    // Only the assigned cleaner can stop the timer
+    if (task.cleanerId !== req.user!.id) {
+      return res.status(403).json({ 
+        message: 'Enkel de toegewezen kuiser kan de timer bedienen' 
+      });
+    }
+
+    if (!task.timerStartedAt) {
+      return res.status(400).json({ message: 'Timer is niet gestart' });
+    }
 
     const endTime = new Date();
     const startTime = task.timerStartedAt;
@@ -255,7 +295,11 @@ app.post('/api/tasks/:id/timer/stop', authenticateToken, async (req: AuthRequest
     // Phase 2: Sync to Odoo
     if (task.odooTaskId) {
       try {
-        await OdooTimesheetService.createTimesheet(task.odooTaskId as number, durationInMinutes, `Kuisbeurt door ${req.user!.name}`);
+        await OdooTimesheetService.createTimesheet(
+          task.odooTaskId as number, 
+          durationInMinutes, 
+          `Kuisbeurt door ${req.user!.name} - ${task.location?.name}`
+        );
       } catch (error) {
         console.error('Odoo Timesheet Sync Error:', error);
       }
