@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import client from '../api/client';
 import { toast } from 'react-hot-toast';
-import { ArrowLeft, Database, Globe, User, Key, Save, Play } from 'lucide-react';
+import { ArrowLeft, Database, Globe, User, Key, Save, Play, RefreshCw, Check } from 'lucide-react';
 
 const Settings: React.FC = () => {
   const [config, setConfig] = useState({
@@ -207,7 +207,7 @@ const Settings: React.FC = () => {
                   <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${
                     selectedProjectIds.includes(p.id) ? 'bg-primary-600 border-primary-600' : 'border-gray-300'
                   }`}>
-                    {selectedProjectIds.includes(p.id) && <Save className="w-3 h-3 text-white" />}
+                    {selectedProjectIds.includes(p.id) ? <Check className="w-3 h-3 text-white" /> : null}
                   </div>
                 </div>
               ))}
@@ -223,7 +223,7 @@ const Settings: React.FC = () => {
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
             }`}
           >
-            <Save className="w-6 h-6" />
+            <RefreshCw className={`w-6 h-6 ${fetchingProjects ? 'animate-spin' : ''}`} />
             GESELECTEERDE SYNCEN ({selectedProjectIds.length})
           </button>
         </div>

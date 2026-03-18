@@ -1,6 +1,5 @@
 console.log("TSX IS WORKING");
-import { PrismaClient } from '@prisma/client';
-const p = new PrismaClient();
+import p from './utils/prisma.js';
 console.log("PRISMA IMPORTED");
 async function test() {
   const users = await p.user.count();

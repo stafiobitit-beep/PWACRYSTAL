@@ -51,8 +51,11 @@ class OdooService {
   }
 
   async authenticate(): Promise<number> {
+    const previousUrl = this.config?.url;
     await this.loadConfig();
-    if (this.uid && this.config) return this.uid;
+    if (this.uid && this.config?.url === previousUrl) return this.uid;
+    
+    this.uid = null; // reset if config changed or not yet authenticated
     if (!this.config?.url) throw new Error('Odoo URL not configured');
 
     console.log(`[Odoo] Connecting to ${this.config.url} for DB: ${this.config.db}...`);

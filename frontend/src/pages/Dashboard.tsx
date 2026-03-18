@@ -17,11 +17,9 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
-    if (!storedUser) {
-      navigate('/login');
-      return;
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
     }
-    setUser(JSON.parse(storedUser));
 
     const fetchTasks = async () => {
       try {
@@ -31,11 +29,12 @@ const Dashboard: React.FC = () => {
       } catch (error) {
         console.error('Error fetching tasks', error);
       } finally {
-        setTimeout(() => setLoading(false), 800); // Simulate smooth feel
+        setLoading(false);
       }
     };
     fetchTasks();
   }, [navigate]);
+
 
   useEffect(() => {
     if (activeFilter === 'ALL') {

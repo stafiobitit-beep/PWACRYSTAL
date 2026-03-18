@@ -15,7 +15,12 @@ const TaskDetail: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'CHAT' | 'PHOTOS' | 'INFO'>('CHAT');
   const [timerInSeconds, setTimerInSeconds] = useState(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const [showIncidentForm, setShowIncidentForm] = useState(false);
+  const [incidentDescription, setIncidentDescription] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [reporting, setReporting] = useState(false);
 
   const fetchTask = async () => {
     try {
@@ -97,6 +102,65 @@ const TaskDetail: React.FC = () => {
     }
   };
 
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    const toastId = toast.loading('Foto voorbereiden...');
+    try {
+      const options = {
+        maxSizeMB: 0.5,
+        maxWidthOrHeight: 1200,
+        useWebWorker: true
+      };
+      
+      const compressedFile = await imageCompression(file, options);
+      const reader = new FileReader();
+      reader.readAsDataURL(compressedFile);
+      reader.onloadend = async () => {
+        const base64data = reader.result;
+        try {
+          const { data } = await client.post(`/tasks/${id}/photos`, {
+            url: base64data,
+            type: 'USER_UPLOAD',
+            odooTaskId: task.odooTaskId,
+            fileName: file.name
+          });
+          setTask((prev: any) => ({ ...prev, photos: [...(prev.photos || []), data] }));
+          toast.success('Foto succesvol geüpload!', { id: toastId });
+          setActiveTab('PHOTOS');
+        } catch (err) {
+          toast.error('Upload naar server mislukt', { id: toastId });
+        }
+      };
+    } catch (error) {
+      toast.error('Fout bij comprimeren foto', { id: toastId });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleReportIncident = async () => {
+    if (!incidentDescription.trim()) return;
+    setReporting(true);
+    try {
+      const { data } = await client.post(`/tasks/${id}/incidents`, {
+        description: incidentDescription,
+        odooTaskId: task.odooTaskId
+      });
+      setTask((prev: any) => ({ ...prev, incidents: [...(prev.incidents || []), data], status: 'ISSUE' }));
+      toast.success('Incident gemeld');
+      setShowIncidentForm(false);
+      setIncidentDescription('');
+    } catch (error) {
+      toast.error('Melden incident mislukt');
+    } finally {
+      setReporting(false);
+    }
+  };
+
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
@@ -122,7 +186,7 @@ const TaskDetail: React.FC = () => {
           <p className="text-xs text-gray-500 font-medium truncate">{task.location?.name || 'Zonder locatie'}</p>
         </div>
         {!isCustomer && (
-          <button onClick={() => toast.error('Incident functie komt eraan')} className="p-2 text-red-500 active:bg-red-50 rounded-full transition-all">
+          <button onClick={() => setShowIncidentForm(true)} className="p-2 text-red-500 active:bg-red-50 rounded-full transition-all">
             <AlertCircle className="w-6 h-6" />
           </button>
         )}
@@ -243,8 +307,20 @@ const TaskDetail: React.FC = () => {
       <div className="bg-white p-4 border-t border-gray-100 shrink-0 shadow-lg">
         {activeTab === 'CHAT' ? (
           <form onSubmit={handleSendMessage} className="flex gap-3 items-center">
-            <button type="button" onClick={() => toast.error('Check de Foto tab')} className="p-3 bg-gray-100 rounded-2xl text-gray-500 active:bg-gray-200 transition-all shrink-0">
-              <Camera className="w-6 h-6" />
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handlePhotoUpload} 
+              accept="image/*" 
+              className="hidden" 
+            />
+            <button 
+              type="button" 
+              onClick={() => fileInputRef.current?.click()} 
+              disabled={uploading}
+              className="p-3 bg-gray-100 rounded-2xl text-gray-500 active:bg-gray-200 transition-all shrink-0 disabled:opacity-50"
+            >
+              <Camera className={`w-6 h-6 ${uploading ? 'animate-pulse' : ''}`} />
             </button>
             <input 
               type="text" 
@@ -258,8 +334,12 @@ const TaskDetail: React.FC = () => {
             </button>
           </form>
         ) : activeTab === 'PHOTOS' ? (
-          <button onClick={() => toast('Selecteer een foto via de camera knop')} className="flex items-center justify-center gap-2 w-full bg-primary-600 text-white py-4 rounded-2xl font-black shadow-xl shadow-primary-100 active:scale-95 transition-all">
-            <Camera className="w-6 h-6" /> FOTO TOEVOEGEN
+          <button 
+            onClick={() => fileInputRef.current?.click()} 
+            disabled={uploading}
+            className="flex items-center justify-center gap-2 w-full bg-primary-600 text-white py-4 rounded-2xl font-black shadow-xl shadow-primary-100 active:scale-95 transition-all disabled:opacity-50"
+          >
+            <Camera className={`w-6 h-6 ${uploading ? 'animate-pulse' : ''}`} /> {uploading ? 'UPLOADING...' : 'FOTO TOEVOEGEN'}
           </button>
         ) : isCleaner && task.status !== 'DONE' ? (
           <button onClick={() => handleStatusUpdate('DONE')} className="w-full bg-green-600 text-white py-4 rounded-2xl font-black shadow-xl shadow-green-100 active:scale-95 transition-all">
@@ -267,8 +347,52 @@ const TaskDetail: React.FC = () => {
           </button>
         ) : null}
       </div>
+
+      {/* Incident Form Modal */}
+      <AnimatePresence>
+        {showIncidentForm && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowIncidentForm(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              className="bg-white w-full max-w-lg rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl relative z-10"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-black text-gray-900 flex items-center gap-2">
+                  <AlertCircle className="text-red-500" /> Incident Melden
+                </h2>
+                <button onClick={() => setShowIncidentForm(false)} className="text-gray-400 font-bold">SLUIT</button>
+              </div>
+              <p className="text-sm text-gray-500 mb-4 font-medium">Wat is er aan de hand? Beschrijf het probleem zo duidelijk mogelijk.</p>
+              <textarea 
+                rows={4}
+                value={incidentDescription}
+                onChange={(e) => setIncidentDescription(e.target.value)}
+                className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl p-4 font-bold focus:border-red-500 transition-all outline-none mb-6"
+                placeholder="Bijv: Sleutel afgebroken, vlek niet weg te krijgen..."
+              />
+              <button 
+                onClick={handleReportIncident}
+                disabled={reporting || !incidentDescription.trim()}
+                className="w-full bg-red-600 text-white py-5 rounded-[24px] font-black shadow-xl shadow-red-100 active:scale-95 transition-all disabled:opacity-50"
+              >
+                {reporting ? 'MELDING VERSTUREN...' : 'MELDING VERSTUREN'}
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
+
 
 export default TaskDetail;

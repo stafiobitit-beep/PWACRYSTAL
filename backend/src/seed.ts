@@ -1,6 +1,4 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from './utils/prisma.js';
 
 async function main() {
   // Clear existing data
@@ -52,8 +50,8 @@ async function main() {
         description: `Standaard wekelijkse schoonmaak #${i + 1}`,
         date: new Date(Date.now() + i * 24 * 60 * 60 * 1000), // Next 10 days
         status: i % 4 === 0 ? 'DONE' : i % 3 === 0 ? 'ISSUE' : 'PLANNED',
-        locationId: locations[i % locations.length].id,
-        cleanerId: cleaners[i % cleaners.length].id,
+        locationId: locations[i % locations.length]!.id,
+        cleanerId: cleaners[i % cleaners.length]!.id,
         managerId: admin.id
       }
     });
@@ -62,10 +60,10 @@ async function main() {
 
   // Add messages for the first task
   await prisma.taskMessage.create({
-    data: { content: 'Hallo, ik ben onderweg naar de locatie.', taskId: tasks[0].id, senderId: cleaner1.id }
+    data: { content: 'Hallo, ik ben onderweg naar de locatie.', taskId: tasks[0]!.id, senderId: cleaner1.id }
   });
   await prisma.taskMessage.create({
-    data: { content: 'Prima, tot zo!', taskId: tasks[0].id, senderId: customer1.id }
+    data: { content: 'Prima, tot zo!', taskId: tasks[0]!.id, senderId: customer1.id }
   });
 
   console.log('Demo data seeded successfully');

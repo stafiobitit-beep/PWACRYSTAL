@@ -147,7 +147,7 @@ const CreateTask: React.FC = () => {
           disabled={loading}
           className="w-full bg-primary-600 text-white py-5 rounded-[24px] font-black shadow-xl shadow-primary-200 active:scale-95 transition-all text-lg flex items-center justify-center gap-3 disabled:opacity-50"
         >
-          {loading ? 'Aanmaken...' : <><Send className="w-6 h-6" /> TAAL OPSLAAN</>}
+          {loading ? 'Aanmaken...' : <><Send className="w-6 h-6" /> TAAK OPSLAAN</>}
         </button>
       </form>
     </div>

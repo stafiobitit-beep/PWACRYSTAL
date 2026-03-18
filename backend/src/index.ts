@@ -61,19 +61,24 @@ const autoSeed = async () => {
 
   console.log('Auto-seed completed (upsert used). Demo accounts ready.');
 };
-autoSeed();
+autoSeed().catch(err => console.error('Auto-seed failed:', err));
 
 // --- AUTH ROUTES ---
 app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body;
-  const user = await prisma.user.findUnique({ where: { email } });
+  try {
+    const { email, password } = req.body;
+    const user = await prisma.user.findUnique({ where: { email } });
 
-  if (!user || !(await bcrypt.compare(password, user.password))) {
-    return res.status(401).json({ message: 'Invalid credentials' });
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign({ id: user.id, role: user.role, email: user.email, name: user.name }, JWT_SECRET);
+    res.json({ token, user: { id: user.id, name: user.name, role: user.role, email: user.email } });
+  } catch (e) {
+    console.error('Login error:', e);
+    res.status(500).json({ message: 'Server error' });
   }
-
-  const token = jwt.sign({ id: user.id, role: user.role, email: user.email, name: user.name }, JWT_SECRET);
-  res.json({ token, user: { id: user.id, name: user.name, role: user.role, email: user.email } });
 });
 
 // --- TASK ROUTES ---
@@ -102,189 +107,228 @@ app.get('/api/tasks', authenticateToken, async (req: AuthRequest, res) => {
 });
 
 app.get('/api/tasks/:id', authenticateToken, async (req: AuthRequest, res) => {
-  const { role, id: userId } = req.user!;
-  const task = await prisma.cleaningTask.findUnique({
-    where: { id: req.params.id },
-    include: { location: true, cleaner: true, messages: { include: { sender: true } }, photos: true, incidents: true }
-  });
+  try {
+    const { role, id: userId } = req.user!;
+    const task = await prisma.cleaningTask.findUnique({
+      where: { id: req.params.id as string },
+      include: { location: true, cleaner: true, messages: { include: { sender: true } }, photos: true, incidents: true }
+    });
 
-  if (!task) return res.status(404).json({ message: 'Taak niet gevonden' });
+    if (!task) return res.status(404).json({ message: 'Taak niet gevonden' });
 
-  // Authorization Check
-  if (role === 'ADMIN') {
-    return res.json(task);
-  } else if (role === 'CLEANER' && task.cleanerId === userId) {
-    return res.json(task);
-  } else if (role === 'CUSTOMER' && (task as any).location?.customerId === userId) {
-    return res.json(task);
+    // Authorization Check
+    const isOwner = role === 'ADMIN';
+    const isCleaner = role === 'CLEANER' && task.cleanerId === userId;
+    const isCustomer = role === 'CUSTOMER' && (task as any).location?.customerId === userId;
+
+    if (isOwner || isCleaner || isCustomer) {
+      return res.json(task);
+    }
+
+    res.status(403).json({ message: 'Geen toegang tot deze taak' });
+  } catch (e) {
+    res.status(500).json({ message: 'Server error' });
   }
-
-  res.status(403).json({ message: 'Geen toegang tot deze taak' });
 });
 
 app.post('/api/tasks', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
-  const { title, description, date, locationId, cleanerId } = req.body;
-  
-  const location = await prisma.location.findUnique({ where: { id: locationId } });
-  const cleaner = await prisma.user.findUnique({ where: { id: cleanerId } });
-  
-  // 1. Create locally
-  const task = await prisma.cleaningTask.create({
-    data: {
-      title,
-      description,
-      date: new Date(date),
-      status: 'PLANNED',
-      locationId,
-      cleanerId
-    },
-    include: { location: true, cleaner: true }
-  });
+  try {
+    const { title, description, date, locationId, cleanerId } = req.body;
+    
+    const location = await prisma.location.findUnique({ where: { id: locationId } });
+    if (!location) return res.status(400).json({ message: 'Locatie niet gevonden' });
 
-  // 2. Sync to Odoo if location has odooProjectId
-  if (location?.odooProjectId) {
-    try {
-      const odooTask = await OdooTaskService.createTask({
-        name: title,
-        project_id: location.odooProjectId,
-        partner_id: location.odooProjectId, // Usually same as project partner in this simplified flow
-        description: description || ''
-      });
-      
-      await prisma.cleaningTask.update({
-        where: { id: task.id },
-        data: { odooTaskId: odooTask as number }
-      });
-    } catch (error) {
-       console.error('Odoo Task Creation Sync Error:', error);
+    const customer = await prisma.user.findUnique({ where: { id: location.customerId } });
+    
+    // 1. Create locally
+    const task = await prisma.cleaningTask.create({
+      data: {
+        title,
+        description,
+        date: new Date(date),
+        status: 'PLANNED',
+        locationId,
+        cleanerId
+      },
+      include: { location: true, cleaner: true }
+    });
+
+    // 2. Sync to Odoo if location has odooProjectId
+    if (location?.odooProjectId) {
+      try {
+        const taskData: { name: string, project_id: number, partner_id?: number, description?: string } = {
+          name: title,
+          project_id: location.odooProjectId,
+          description: description || ''
+        };
+        
+        if (customer?.odooPartnerId) {
+          taskData.partner_id = customer.odooPartnerId;
+        }
+
+        const odooTask = await OdooTaskService.createTask(taskData);
+        
+        await prisma.cleaningTask.update({
+          where: { id: task.id },
+          data: { odooTaskId: odooTask as number }
+        });
+      } catch (error) {
+         console.error('Odoo Task Creation Sync Error:', error);
+      }
     }
-  }
 
-  res.json(task);
+    res.json(task);
+  } catch (e) {
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
 app.post('/api/tasks/:id/timer/start', authenticateToken, async (req: AuthRequest, res) => {
-  const task = await prisma.cleaningTask.update({
-    where: { id: req.params.id },
-    data: { timerStartedAt: new Date(), status: 'IN_PROGRESS' }
-  });
-  res.json(task);
+  try {
+    const task = await prisma.cleaningTask.update({
+      where: { id: req.params.id as string },
+      data: { timerStartedAt: new Date(), status: 'IN_PROGRESS' }
+    });
+    res.json(task);
+  } catch (e) {
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
 app.post('/api/tasks/:id/timer/stop', authenticateToken, async (req: AuthRequest, res) => {
-  const task = await prisma.cleaningTask.findUnique({ where: { id: req.params.id } });
-  if (!task || !task.timerStartedAt) return res.status(400).json({ message: 'Timer not started' });
+  try {
+    const task = await prisma.cleaningTask.findUnique({ where: { id: req.params.id as string } });
+    if (!task || !task.timerStartedAt) return res.status(400).json({ message: 'Timer not started' });
 
-  const endTime = new Date();
-  const startTime = task.timerStartedAt;
-  const durationInMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
+    const endTime = new Date();
+    const startTime = task.timerStartedAt;
+    const durationInMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
 
-  const timesheet = await prisma.timesheet.create({
-    data: {
-      startTime,
-      endTime,
-      duration: durationInMinutes,
-      taskId: task.id,
-      cleanerId: req.user!.id
+    const timesheet = await prisma.timesheet.create({
+      data: {
+        startTime,
+        endTime,
+        duration: durationInMinutes,
+        taskId: task.id,
+        cleanerId: req.user!.id
+      }
+    });
+
+    // Phase 2: Sync to Odoo
+    if (task.odooTaskId) {
+      try {
+        await OdooTimesheetService.createTimesheet(task.odooTaskId as number, durationInMinutes, `Kuisbeurt door ${req.user!.name}`);
+      } catch (error) {
+        console.error('Odoo Timesheet Sync Error:', error);
+      }
     }
-  });
 
-  // Phase 2: Sync to Odoo
-  if (task.odooTaskId) {
-    try {
-      await OdooTimesheetService.createTimesheet(task.odooTaskId as number, durationInMinutes, `Kuisbeurt door ${req.user!.name}`);
-    } catch (error) {
-      console.error('Odoo Timesheet Sync Error:', error);
-    }
+    await prisma.cleaningTask.update({
+      where: { id: req.params.id as string },
+      data: { timerStartedAt: null }
+    });
+
+    res.json({ task, timesheet });
+  } catch (e) {
+    res.status(500).json({ message: 'Server error' });
   }
-
-  await prisma.cleaningTask.update({
-    where: { id: req.params.id },
-    data: { timerStartedAt: null }
-  });
-
-  res.json({ task, timesheet });
 });
 
 app.patch('/api/tasks/:id/status', authenticateToken, async (req, res) => {
-  const { status, odooTaskId, odooStageId } = req.body;
-  const task = await prisma.cleaningTask.update({
-    where: { id: req.params.id },
-    data: { status }
-  });
+  try {
+    const { status, odooTaskId, odooStageId } = req.body;
+    const task = await prisma.cleaningTask.update({
+      where: { id: req.params.id as string },
+      data: { status }
+    });
 
-  // Phase 2: Sync to Odoo if ID is provided
-  if (odooTaskId && odooStageId) {
-    try {
-      await OdooTaskService.updateTaskStatus(odooTaskId, odooStageId);
-    } catch (error) {
-      console.error('Odoo Sync Error:', error);
+    // Phase 2: Sync to Odoo if ID is provided
+    if (odooTaskId && odooStageId) {
+      try {
+        await OdooTaskService.updateTaskStatus(odooTaskId, odooStageId);
+      } catch (error) {
+        console.error('Odoo Sync Error:', error);
+      }
     }
+    res.json(task);
+  } catch (e) {
+    res.status(500).json({ message: 'Server error' });
   }
-  res.json(task);
 });
 
 // --- CHAT ROUTES ---
 app.post('/api/tasks/:id/messages', authenticateToken, async (req: AuthRequest, res) => {
-  const { content, odooTaskId } = req.body;
-  const message = await prisma.taskMessage.create({
-    data: {
-      content,
-      taskId: req.params.id,
-      senderId: req.user!.id
-    },
-    include: { sender: true }
-  });
+  try {
+    const { content, odooTaskId } = req.body;
+    const message = await prisma.taskMessage.create({
+      data: {
+        content,
+        taskId: req.params.id as string,
+        senderId: req.user!.id
+      },
+      include: { sender: true }
+    });
 
-  // Phase 2: Sync to Odoo
-  if (odooTaskId) {
-    try {
-      await OdooMessageService.postMessage(odooTaskId, content, req.user!.name);
-    } catch (error) {
-      console.error('Odoo Message Sync Error:', error);
+    // Phase 2: Sync to Odoo
+    if (odooTaskId) {
+      try {
+        await OdooMessageService.postMessage(odooTaskId, content, req.user!.name);
+      } catch (error) {
+        console.error('Odoo Message Sync Error:', error);
+      }
     }
+    res.json(message);
+  } catch (e) {
+    res.status(500).json({ message: 'Server error' });
   }
-  res.json(message);
 });
 
 // --- PHOTO ROUTES ---
 app.post('/api/tasks/:id/photos', authenticateToken, async (req, res) => {
-  const { url, type, odooTaskId, fileName } = req.body;
-  const photo = await prisma.taskPhoto.create({
-    data: { url, type, taskId: req.params.id }
-  });
+  try {
+    const { url, type, odooTaskId, fileName } = req.body;
+    const photo = await prisma.taskPhoto.create({
+      data: { url, type, taskId: req.params.id as string }
+    });
 
-  // Phase 2: Sync to Odoo
-  if (odooTaskId && url) {
-    try {
-      const base64Data = url.split(',')[1]; // Remove data URL prefix
-      await OdooAttachmentService.uploadAttachment(odooTaskId, fileName || 'upload.jpg', base64Data);
-    } catch (error) {
-      console.error('Odoo Attachment Sync Error:', error);
+    // Phase 2: Sync to Odoo
+    if (odooTaskId && url) {
+      try {
+        const base64Data = url.split(',')[1]; // Remove data URL prefix
+        await OdooAttachmentService.uploadAttachment(odooTaskId, fileName || 'upload.jpg', base64Data);
+      } catch (error) {
+        console.error('Odoo Attachment Sync Error:', error);
+      }
     }
+    res.json(photo);
+  } catch (e) {
+    res.status(500).json({ message: 'Server error' });
   }
-  res.json(photo);
 });
 
 // --- INCIDENT ROUTES ---
 app.post('/api/tasks/:id/incidents', authenticateToken, async (req, res) => {
-  const { description, odooTaskId } = req.body;
-  const incident = await prisma.incident.create({
-    data: { description, status: 'OPEN', taskId: req.params.id }
-  });
+  try {
+    const { description, odooTaskId } = req.body;
+    const incident = await prisma.incident.create({
+      data: { description, status: 'OPEN', taskId: req.params.id as string }
+    });
 
-  // Phase 2: Sync to Odoo
-  if (odooTaskId) {
-    try {
-      await OdooIncidentService.createIncident(odooTaskId, description);
-    } catch (error) {
-      console.error('Odoo Incident Sync Error:', error);
+    // Phase 2: Sync to Odoo
+    if (odooTaskId) {
+      try {
+        await OdooIncidentService.createIncident(odooTaskId, description);
+      } catch (error) {
+        console.error('Odoo Incident Sync Error:', error);
+      }
     }
-  }
 
-  // Auto update task status to ISSUE
-  await prisma.cleaningTask.update({ where: { id: req.params.id }, data: { status: 'ISSUE' } });
-  res.json(incident);
+    // Auto update task status to ISSUE
+    await prisma.cleaningTask.update({ where: { id: req.params.id as string }, data: { status: 'ISSUE' } });
+    res.json(incident);
+  } catch (e) {
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
 // --- SETTINGS ROUTES ---
@@ -392,25 +436,29 @@ app.post('/api/sync/all', authenticateToken, authorizeRole(['ADMIN']), async (re
          // Match cleaner if possible (using name or looking up via Odoo user_id if we had more info)
          // For now, we'll try to match by name or email if Odoo gives us that.
          // Odoo 'user_id' is [id, name]. We'll try to find a cleaner with that name in our DB.
-         const cleaner = t.user_id ? allUsers.find((u: any) => u.name === t.user_id[1]) : null;
+          const cleaner = t.user_id ? allUsers.find((u: any) => u.name === t.user_id[1]) : null;
 
-         await prisma.cleaningTask.upsert({
-           where: { odooTaskId: t.id },
-           update: { 
-             title: t.name, 
-             description: t.description || '',
-             cleanerId: cleaner?.id || undefined
-           },
-           create: { 
-             title: t.name, 
-             description: t.description || '', 
-             date: t.date_deadline ? new Date(t.date_deadline) : new Date(),
-             status: 'PLANNED',
-             locationId: location.id,
-             odooTaskId: t.id,
-             cleanerId: cleaner?.id
-           }
-         });
+          const taskData: any = {
+            title: t.name,
+            description: t.description || '',
+          };
+          if (cleaner?.id) {
+            taskData.cleanerId = cleaner.id;
+          }
+
+          await prisma.cleaningTask.upsert({
+            where: { odooTaskId: t.id },
+            update: taskData,
+            create: { 
+              title: t.name, 
+              description: t.description || '', 
+              date: t.date_deadline ? new Date(t.date_deadline) : new Date(),
+              status: 'PLANNED',
+              locationId: location.id,
+              odooTaskId: t.id,
+              ...taskData
+            }
+          });
        }
     }
 
