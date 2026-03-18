@@ -6,6 +6,7 @@ import bcrypt from 'bcrypt';
 import prisma from './utils/prisma.js';
 import { authenticateToken, authorizeRole, type AuthRequest } from './middleware/auth.js';
 import { OdooTaskService, OdooMessageService, OdooAttachmentService, OdooIncidentService, OdooTimesheetService, OdooProjectService, OdooPartnerService } from './services/odoo.service.js';
+import { odoo } from './services/odoo.base.js';
 
 dotenv.config();
 
@@ -138,6 +139,7 @@ export async function syncOdooData(selectedProjectIds?: number[]) {
     try {
       const odooTasks = await OdooTaskService.getTasks();
       const allUsers = await prisma.user.findMany({ where: { role: 'CLEANER' } });
+      const userCache = new Map<number, string>();
 
       for (const t of odooTasks) {
         try {
@@ -147,7 +149,29 @@ export async function syncOdooData(selectedProjectIds?: number[]) {
 
           const location = await prisma.location.findUnique({ where: { odooProjectId: t.project_id[0] } });
           if (location) {
-            const cleaner = t.user_id ? allUsers.find((u: any) => u.name === t.user_id[1]) : null;
+            // Resolve cleaner name from user_ids (plural in Odoo 19)
+            let odooUserName: string | null = null;
+            const userIds = t.user_ids && Array.isArray(t.user_ids) ? t.user_ids : [];
+            
+            if (userIds.length > 0) {
+              const firstId = userIds[0];
+              if (userCache.has(firstId)) {
+                odooUserName = userCache.get(firstId)!;
+              } else {
+                try {
+                  const userData = await odoo.execute('res.users', 'read', [[firstId]], { fields: ['name'] });
+                  if (userData && userData[0] && userData[0].name) {
+                    const name = userData[0].name as string;
+                    odooUserName = name;
+                    userCache.set(firstId, name);
+                  }
+                } catch (e) {
+                  console.error(`Failed to resolve Odoo user name for ID ${firstId}:`, e);
+                }
+              }
+            }
+
+            const cleaner = odooUserName ? allUsers.find((u: any) => u.name === odooUserName) : null;
             const taskData: any = {
               title: t.name,
               description: t.description || '',

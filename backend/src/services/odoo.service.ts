@@ -3,7 +3,7 @@ import { odoo } from './odoo.base.js';
 export class OdooTaskService {
   static async getTasks(domain: any[] = []) {
     return odoo.execute('project.task', 'search_read', [domain], {
-      fields: ['id', 'name', 'description', 'date_deadline', 'stage_id', 'user_id', 'partner_id', 'project_id'],
+      fields: ['id', 'name', 'description', 'date_deadline', 'stage_id', 'user_ids', 'partner_id', 'project_id'],
     });
   }
 
