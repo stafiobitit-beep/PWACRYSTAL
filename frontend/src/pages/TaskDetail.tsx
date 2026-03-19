@@ -504,19 +504,19 @@ const TaskDetail: React.FC = () => {
       <div className="bg-white p-4 border-t border-gray-100 shrink-0 shadow-lg">
         {activeTab === 'CHAT' ? (
           <form onSubmit={handleSendMessage} className="flex gap-3 items-center">
-            <input 
-              id="photo-upload"
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handlePhotoUpload} 
-              accept="image/*" 
-              className="hidden" 
+            <input
+              id="photo-file-input"
+              type="file"
+              ref={fileInputRef}
+              onChange={handlePhotoUpload}
+              accept="image/*"
+              className="hidden"
             />
-            <label 
-              htmlFor="photo-upload"
-              className={`p-3 bg-gray-100 rounded-2xl text-gray-500 active:bg-gray-200 transition-all shrink-0 cursor-pointer ${uploading ? 'opacity-40 pointer-events-none' : ''}`}
+            <label
+              htmlFor="photo-file-input"
+              className={`p-3 bg-gray-100 rounded-xl text-gray-500 active:bg-gray-200 transition-all shrink-0 cursor-pointer ${uploading ? 'opacity-40 pointer-events-none' : ''}`}
             >
-              <Camera className={`w-6 h-6 ${uploading ? 'animate-pulse' : ''}`} />
+              <Camera className={`w-5 h-5 ${uploading ? 'animate-pulse' : ''}`} />
             </label>
             <input 
               type="text" 
@@ -530,11 +530,12 @@ const TaskDetail: React.FC = () => {
             </button>
           </form>
         ) : activeTab === 'PHOTOS' ? (
-          <label 
-            htmlFor="photo-upload"
-            className={`flex items-center justify-center gap-2 w-full bg-primary-600 text-white py-4 rounded-2xl font-black shadow-xl shadow-primary-100 active:scale-95 transition-all cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
+          <label
+            htmlFor="photo-file-input"
+            className={`w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-4 rounded-xl font-black active:scale-95 transition-all cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
           >
-            <Camera className={`w-6 h-6 ${uploading ? 'animate-pulse' : ''}`} /> {uploading ? 'UPLOADING...' : 'FOTO TOEVOEGEN'}
+            <Camera className={`w-5 h-5 ${uploading ? 'animate-pulse' : ''}`} />
+            {uploading ? 'Uploaden...' : 'Foto toevoegen'}
           </label>
         ) : isCleaner && task.status !== 'DONE' ? (
           <button onClick={() => handleStatusUpdate('DONE')} className="w-full bg-green-600 text-white py-4 rounded-2xl font-black shadow-xl shadow-green-100 active:scale-95 transition-all">

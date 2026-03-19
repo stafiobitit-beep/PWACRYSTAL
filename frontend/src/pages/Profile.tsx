@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/layout/BottomNav';
-import { User, LogOut, Settings as SettingsIcon, ShieldCheck, Users } from 'lucide-react';
+import { User, LogOut, Settings as SettingsIcon, ShieldCheck, Users, UserCheck } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 const Profile: React.FC = () => {
@@ -39,8 +39,21 @@ const Profile: React.FC = () => {
         {user?.role === 'ADMIN' && (
           <>
             <button
+              onClick={() => navigate('/customers')}
+              className="w-full bg-white p-5 rounded-2xl shadow-sm flex items-center gap-4 active:bg-gray-50 transition-all border border-transparent active:border-blue-100"
+            >
+              <div className="w-11 h-11 bg-green-50 rounded-xl flex items-center justify-center shrink-0">
+                <UserCheck className="text-green-600 w-5 h-5" />
+              </div>
+              <div className="text-left">
+                <p className="font-black text-gray-900">Klanten beheren</p>
+                <p className="text-xs text-gray-400 mt-0.5">Aanmaken en koppelen aan projecten</p>
+              </div>
+            </button>
+
+            <button
               onClick={() => navigate('/cleaners')}
-              className="w-full bg-white p-6 rounded-[32px] shadow-sm flex items-center justify-between group active:bg-gray-50 transition-all border border-transparent active:border-primary-100"
+              className="w-full bg-white p-6 rounded-[32px] shadow-sm flex items-center justify-between group active:bg-gray-50 transition-all border border-transparent active:border-primary-100 mb-4"
             >
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center group-active:bg-primary-100 transition-colors">
@@ -49,21 +62,6 @@ const Profile: React.FC = () => {
                 <div className="text-left">
                   <p className="font-bold text-gray-900">Kuisers beheren</p>
                   <p className="text-xs font-medium text-gray-500">Accounts aanmaken & verwijderen</p>
-                </div>
-              </div>
-            </button>
-
-            <button
-              onClick={() => navigate('/customers')}
-              className="w-full bg-white p-6 rounded-[32px] shadow-sm flex items-center justify-between group active:bg-gray-50 transition-all border border-transparent active:border-primary-100"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center group-active:bg-primary-100 transition-colors">
-                  <User className="text-gray-500 group-active:text-primary-600" />
-                </div>
-                <div className="text-left">
-                  <p className="font-bold text-gray-900">Klanten beheren</p>
-                  <p className="text-xs font-medium text-gray-500">Aanmaken en koppelen aan projecten</p>
                 </div>
               </div>
             </button>

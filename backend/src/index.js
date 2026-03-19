@@ -793,22 +793,18 @@ app.patch('/api/users/:id', authenticateToken, authorizeRole(['ADMIN']), async (
     }
 });
 app.delete('/api/users/:id', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
-    try {
-        const id = req.params.id;
-        const user = await prisma.user.findUnique({ where: { id } });
-        if (!user)
-            return res.status(404).json({ message: 'Gebruiker niet gevonden' });
-        const activeTasks = await prisma.cleaningTask.count({ where: { cleanerId: id, status: 'IN_PROGRESS' } });
-        if (activeTasks > 0)
-            return res.status(409).json({ message: 'Gebruiker heeft actieve taken' });
-        // Unlink from tasks before deleting to avoid foreign key violations
-        await prisma.cleaningTask.updateMany({ where: { cleanerId: id }, data: { cleanerId: null } });
-        await prisma.user.delete({ where: { id } });
-        res.json({ message: 'Gebruiker verwijderd' });
-    }
-    catch (e) {
-        res.status(500).json({ message: 'Server error' });
-    }
+    const id = req.params.id;
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user)
+        return res.status(404).json({ message: 'Gebruiker niet gevonden' });
+    if (user.role !== 'CLEANER')
+        return res.status(403).json({ message: 'Enkel kuisers kunnen verwijderd worden' });
+    const activeTasks = await prisma.cleaningTask.count({ where: { cleanerId: id, status: 'IN_PROGRESS' } });
+    if (activeTasks > 0)
+        return res.status(409).json({ message: 'Kuiser heeft actieve taken' });
+    await prisma.cleaningTask.updateMany({ where: { cleanerId: id }, data: { cleanerId: null } });
+    await prisma.user.delete({ where: { id } });
+    res.json({ message: 'Kuiser verwijderd' });
 });
 app.get('/api/users/cleaners', authenticateToken, async (req, res) => {
     const cleaners = await prisma.user.findMany({
@@ -848,7 +844,6 @@ app.post('/api/odoo/users/import', authenticateToken, authorizeRole(['ADMIN']), 
     res.json(user);
 });
 // --- CUSTOMER MANAGEMENT ROUTES ---
-// GET all customers with their locations
 app.get('/api/customers', authenticateToken, authorizeRole(['ADMIN']), async (_req, res) => {
     const customers = await prisma.user.findMany({
         where: { role: 'CUSTOMER' },
@@ -865,7 +860,6 @@ app.get('/api/customers', authenticateToken, authorizeRole(['ADMIN']), async (_r
     });
     res.json(customers);
 });
-// POST create a new customer
 app.post('/api/customers', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
     const { name, email, password } = req.body;
     if (!name || !email || !password || password.length < 6) {
@@ -873,7 +867,7 @@ app.post('/api/customers', authenticateToken, authorizeRole(['ADMIN']), async (r
     }
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
-        return res.status(409).json({ message: 'E-mailadres al in gebruik' });
+        return res.status(409).json({ message: `E-mailadres al in gebruik (${existing.role})` });
     }
     const hashed = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
@@ -882,30 +876,29 @@ app.post('/api/customers', authenticateToken, authorizeRole(['ADMIN']), async (r
     });
     res.json(user);
 });
-// DELETE a customer
 app.delete('/api/customers/:id', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
     const id = req.params.id;
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user || user.role !== 'CUSTOMER') {
         return res.status(404).json({ message: 'Klant niet gevonden' });
     }
-    // Unlink locations before deleting
-    await prisma.location.updateMany({ where: { customerId: id }, data: { customerId: undefined } });
+    const admin = await prisma.user.findFirst({ where: { role: 'ADMIN' } });
+    if (admin) {
+        await prisma.location.updateMany({ where: { customerId: id }, data: { customerId: admin.id } });
+    }
     await prisma.user.delete({ where: { id } });
     res.json({ message: 'Klant verwijderd' });
 });
-// POST link a customer to a location (project)
 app.post('/api/customers/:id/locations', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
-    const { locationId } = req.body;
     const customerId = req.params.id;
+    const { locationId } = req.body;
     const customer = await prisma.user.findUnique({ where: { id: customerId } });
     if (!customer || customer.role !== 'CUSTOMER') {
         return res.status(404).json({ message: 'Klant niet gevonden' });
     }
     const location = await prisma.location.findUnique({ where: { id: locationId } });
-    if (!location) {
+    if (!location)
         return res.status(404).json({ message: 'Locatie niet gevonden' });
-    }
     const updated = await prisma.location.update({
         where: { id: locationId },
         data: { customerId }

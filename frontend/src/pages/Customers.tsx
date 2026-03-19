@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import client from '../api/client';
 import { toast } from 'react-hot-toast';
 import { ArrowLeft, Plus, Trash2, User, Mail, Lock, X, Link, MapPin } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Skeleton } from '../components/common/Skeleton';
 
 interface Customer {
   id: string;
@@ -18,7 +16,7 @@ interface Location {
   id: string;
   name: string;
   address: string;
-  customerId?: string;
+  customer?: { name: string };
 }
 
 const Customers: React.FC = () => {
@@ -36,8 +34,8 @@ const Customers: React.FC = () => {
   const fetchData = async () => {
     try {
       const [cRes, lRes] = await Promise.all([
-        client.get('/api/customers'),
-        client.get('/api/locations'),
+        client.get('/customers'),
+        client.get('/locations'),
       ]);
       setCustomers(cRes.data);
       setLocations(lRes.data);
@@ -58,7 +56,7 @@ const Customers: React.FC = () => {
     }
     setSubmitting(true);
     try {
-      const { data } = await client.post('/api/customers', form);
+      const { data } = await client.post('/customers', form);
       setCustomers(prev => [...prev, { ...data, locations: [] }]);
       toast.success('Klant aangemaakt');
       setShowModal(false);
@@ -66,13 +64,14 @@ const Customers: React.FC = () => {
     } catch (e: any) {
       toast.error(e?.response?.data?.message || 'Aanmaken mislukt');
     } finally {
-      setSubmitting(false); }
+      setSubmitting(false);
+    }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Klant verwijderen?')) return;
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Klant "${name}" verwijderen?`)) return;
     try {
-      await client.delete(`/api/customers/${id}`);
+      await client.delete(`/customers/${id}`);
       setCustomers(prev => prev.filter(c => c.id !== id));
       toast.success('Klant verwijderd');
     } catch (e: any) {
@@ -90,12 +89,10 @@ const Customers: React.FC = () => {
     if (!linkingCustomer || !selectedLocationId) return;
     setSubmitting(true);
     try {
-      await client.post(`/api/customers/${linkingCustomer.id}/locations`, {
-        locationId: selectedLocationId
-      });
+      await client.post(`/customers/${linkingCustomer.id}/locations`, { locationId: selectedLocationId });
       toast.success('Project gekoppeld!');
       setShowLinkModal(false);
-      fetchData(); // refresh to show updated links
+      fetchData();
     } catch (e: any) {
       toast.error(e?.response?.data?.message || 'Koppelen mislukt');
     } finally {
@@ -103,92 +100,87 @@ const Customers: React.FC = () => {
     }
   };
 
-  // Locations not yet linked to any customer (or linked to this customer)
-  const availableLocations = locations.filter(l => !l.customerId || l.customerId === linkingCustomer?.id);
+  const availableLocations = locations.filter(l => !l.customer || l.customer.name === linkingCustomer?.name);
 
   return (
     <div className="min-h-screen bg-gray-50 pb-32">
-      {/* Header */}
-      <div className="bg-white px-6 pt-12 pb-5 flex items-center gap-4 shadow-sm relative z-10 transition-all">
-        <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-gray-500 active:bg-gray-100 rounded-full transition-all">
-          <ArrowLeft className="w-6 h-6" />
+      <div className="bg-white px-6 pt-12 pb-5 flex items-center gap-3 shadow-sm">
+        <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-gray-500 active:bg-gray-100 rounded-xl">
+          <ArrowLeft className="w-5 h-5" />
         </button>
         <div>
           <h1 className="text-xl font-black text-gray-900">Klanten beheren</h1>
-          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">Projecten koppelen</p>
+          <p className="text-xs text-gray-400 mt-0.5">Aanmaken en koppelen aan Odoo projecten</p>
         </div>
       </div>
 
-      <div className="p-6 space-y-4">
+      <div className="p-5 space-y-4">
         {loading ? (
-          [1,2,3].map(i => (
-            <div key={i} className="bg-white rounded-[24px] p-5 border border-gray-50 shadow-sm animate-pulse">
-              <div className="flex items-center gap-4 mb-4">
-                <Skeleton className="w-12 h-12 rounded-2xl" />
+          [1, 2, 3].map(i => (
+            <div key={i} className="bg-white rounded-2xl p-4 border border-gray-100 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 bg-gray-100 rounded-xl" />
                 <div className="flex-1 space-y-2">
-                  <Skeleton className="h-4 w-32" />
-                  <Skeleton className="h-3 w-48" />
+                  <div className="h-4 bg-gray-100 rounded w-32" />
+                  <div className="h-3 bg-gray-100 rounded w-48" />
                 </div>
               </div>
             </div>
           ))
         ) : customers.length === 0 ? (
           <div className="py-20 text-center">
-            <User className="w-16 h-16 text-gray-200 mx-auto mb-4" />
-            <p className="text-gray-400 font-bold">Geen klanten gevonden</p>
+            <User className="w-14 h-14 text-gray-200 mx-auto mb-3" />
+            <p className="text-gray-400 font-medium">Geen klanten gevonden</p>
+            <p className="text-gray-300 text-sm mt-1">Gebruik de + knop om een klant aan te maken</p>
           </div>
         ) : (
           customers.map(customer => (
-            <div key={customer.id} className="bg-white rounded-[24px] border border-gray-50 shadow-sm overflow-hidden animate-fade-in transition-all">
-              <div className="p-5 flex items-center gap-4">
-                <div className="w-12 h-12 bg-green-50 rounded-2xl flex items-center justify-center shrink-0">
-                  <User className="text-green-600 w-6 h-6" />
+            <div key={customer.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="p-4 flex items-center gap-3">
+                <div className="w-11 h-11 bg-green-50 rounded-xl flex items-center justify-center shrink-0">
+                  <User className="text-green-600 w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-black text-gray-900 truncate">{customer.name}</p>
-                  <p className="text-xs text-gray-500 font-medium truncate">{customer.email}</p>
+                  <p className="font-black text-gray-900">{customer.name}</p>
+                  <p className="text-xs text-gray-500">{customer.email}</p>
                   {customer.odooPartnerId && (
-                    <p className="text-[9px] text-primary-500 font-black uppercase mt-1">Odoo partner #{customer.odooPartnerId}</p>
+                    <p className="text-[10px] text-blue-400 font-bold mt-0.5">Odoo partner #{customer.odooPartnerId}</p>
                   )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 shrink-0">
                   <button
                     onClick={() => openLinkModal(customer)}
-                    className="p-3 bg-primary-50 text-primary-600 rounded-2xl active:bg-primary-100 transition-all"
+                    className="p-2.5 bg-blue-50 text-blue-600 rounded-xl active:bg-blue-100 transition-all"
                     title="Koppel aan project"
                   >
-                    <Link className="w-5 h-5" />
+                    <Link className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => handleDelete(customer.id)}
-                    className="p-3 bg-red-50 text-red-500 rounded-2xl active:bg-red-100 transition-all"
+                    onClick={() => handleDelete(customer.id, customer.name)}
+                    className="p-2.5 bg-red-50 text-red-500 rounded-xl active:bg-red-100 transition-all"
                   >
-                    <Trash2 className="w-5 h-5" />
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
-
-              {/* Linked locations */}
-              {customer.locations.length > 0 && (
-                <div className="bg-gray-50/50 px-5 py-4 space-y-2">
-                   <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1">Gekoppelde projecten</p>
+              {customer.locations.length > 0 ? (
+                <div className="border-t border-gray-50 px-4 py-3 space-y-2">
                   {customer.locations.map(loc => (
-                    <div key={loc.id} className="flex items-center gap-2 text-xs text-gray-600">
-                      <MapPin className="w-3 h-3 text-primary-400 shrink-0" />
-                      <span className="font-bold text-gray-800">{loc.name}</span>
+                    <div key={loc.id} className="flex items-center gap-2 text-xs">
+                      <MapPin className="w-3 h-3 text-blue-400 shrink-0" />
+                      <span className="font-bold text-gray-700">{loc.name}</span>
+                      {loc.address && <span className="text-gray-400 truncate">{loc.address}</span>}
                       {loc.odooProjectId && (
-                        <span className="ml-auto text-[9px] text-primary-400 font-black shrink-0">
-                          OD-{loc.odooProjectId}
+                        <span className="ml-auto text-[10px] bg-blue-50 text-blue-500 font-bold px-1.5 py-0.5 rounded shrink-0">
+                          Odoo #{loc.odooProjectId}
                         </span>
                       )}
                     </div>
                   ))}
                 </div>
-              )}
-
-              {customer.locations.length === 0 && (
-                <div className="bg-gray-50/50 px-5 py-4">
-                  <p className="text-xs text-gray-300 italic">Geen projecten gekoppeld</p>
+              ) : (
+                <div className="border-t border-gray-50 px-4 py-2.5">
+                  <p className="text-xs text-gray-300 italic">Koppel een project via de 🔗 knop</p>
                 </div>
               )}
             </div>
@@ -196,142 +188,95 @@ const Customers: React.FC = () => {
         )}
       </div>
 
-      {/* FAB */}
       <button
         onClick={() => setShowModal(true)}
-        className="fixed bottom-10 right-6 bg-primary-600 text-white p-5 rounded-full shadow-xl shadow-primary-200 active:scale-90 transition-all z-40"
+        className="fixed bottom-10 right-6 bg-blue-600 text-white p-4 rounded-full shadow-xl shadow-blue-200 active:scale-90 transition-all z-40"
       >
-        <Plus className="w-8 h-8" />
+        <Plus className="w-6 h-6" />
       </button>
 
-      {/* Create customer modal */}
-      <AnimatePresence>
-        {showModal && (
-          <>
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowModal(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
-            />
-            <motion.div 
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[32px] p-6 z-50 shadow-2xl max-h-[85vh] overflow-y-auto no-scrollbar"
-            >
-              <div className="flex justify-between items-center mb-8">
-                <h2 className="text-xl font-black text-gray-900">Klant toevoegen</h2>
-                <button 
-                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 bg-gray-100 rounded-xl text-gray-500 font-black text-xs uppercase tracking-widest active:bg-gray-200 transition-all"
-                >
-                  SLUIT
-                </button>
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-end">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowModal(false)} />
+          <div className="relative w-full bg-white rounded-t-3xl p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-5">
+              <h2 className="text-lg font-black text-gray-900">Klant toevoegen</h2>
+              <button onClick={() => setShowModal(false)} className="p-2 text-gray-400"><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={handleCreate} className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Naam</label>
+                <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3.5 border-2 border-transparent focus-within:border-blue-200 focus-within:bg-white transition-all">
+                  <User className="text-gray-400 w-4 h-4 shrink-0" />
+                  <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Bedrijfsnaam of naam klant" className="bg-transparent border-none p-0 focus:ring-0 text-sm font-bold w-full outline-none" required />
+                </div>
               </div>
-
-              <form onSubmit={handleCreate} className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-black uppercase tracking-widest text-gray-400 ml-1">Naam</label>
-                  <div className="flex items-center gap-3 bg-gray-50 p-4 rounded-2xl border-2 border-transparent focus-within:border-primary-100 focus-within:bg-white transition-all">
-                    <User className="text-gray-400 w-5 h-5 shrink-0" />
-                    <input type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Bedrijfsnaam of klant" className="bg-transparent border-none p-0 focus:ring-0 text-sm font-bold w-full outline-none" required />
-                  </div>
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">E-mail (wordt login)</label>
+                <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3.5 border-2 border-transparent focus-within:border-blue-200 focus-within:bg-white transition-all">
+                  <Mail className="text-gray-400 w-4 h-4 shrink-0" />
+                  <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="klant@bedrijf.be" className="bg-transparent border-none p-0 focus:ring-0 text-sm font-bold w-full outline-none" required />
                 </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-black uppercase tracking-widest text-gray-400 ml-1">E-mail</label>
-                  <div className="flex items-center gap-3 bg-gray-50 p-4 rounded-2xl border-2 border-transparent focus-within:border-primary-100 focus-within:bg-white transition-all">
-                    <Mail className="text-gray-400 w-5 h-5 shrink-0" />
-                    <input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="klant@bedrijf.be" className="bg-transparent border-none p-0 focus:ring-0 text-sm font-bold w-full outline-none" required />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-black uppercase tracking-widest text-gray-400 ml-1">Wachtwoord</label>
-                  <div className="flex items-center gap-3 bg-gray-50 p-4 rounded-2xl border-2 border-transparent focus-within:border-primary-100 focus-within:bg-white transition-all">
-                    <Lock className="text-gray-400 w-5 h-5 shrink-0" />
-                    <input type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder="Min. 6 tekens" className="bg-transparent border-none p-0 focus:ring-0 text-sm font-bold w-full outline-none" required minLength={6} />
-                  </div>
-                </div>
-
-                <div className="bg-primary-50 rounded-2xl p-4 border border-primary-100">
-                  <p className="text-xs text-primary-700 font-bold leading-relaxed">
-                    💡 Na aanmaken koppel je de klant aan een project via de 🔗 knop.
-                  </p>
-                </div>
-
-                <button type="submit" disabled={submitting} className="w-full bg-primary-600 text-white py-5 rounded-2xl font-black text-sm shadow-xl shadow-primary-100 active:scale-95 transition-all disabled:opacity-50">
-                  {submitting ? 'BEZIG...' : 'KLANT AANMAKEN'}
-                </button>
-              </form>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* Link location modal */}
-      <AnimatePresence>
-        {showLinkModal && linkingCustomer && (
-          <>
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowLinkModal(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
-            />
-            <motion.div 
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[32px] p-6 z-50 shadow-2xl max-h-[85vh] overflow-y-auto no-scrollbar"
-            >
-              <div className="flex justify-between items-center mb-6">
-                <div>
-                  <h2 className="text-xl font-black text-gray-900">Project koppelen</h2>
-                  <p className="text-sm text-gray-500 font-medium">aan {linkingCustomer.name}</p>
-                </div>
-                <button onClick={() => setShowLinkModal(false)} className="p-2 text-gray-400"><X className="w-6 h-6" /></button>
               </div>
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Wachtwoord</label>
+                <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3.5 border-2 border-transparent focus-within:border-blue-200 focus-within:bg-white transition-all">
+                  <Lock className="text-gray-400 w-4 h-4 shrink-0" />
+                  <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="Min. 6 tekens" className="bg-transparent border-none p-0 focus:ring-0 text-sm font-bold w-full outline-none" required minLength={6} />
+                </div>
+              </div>
+              <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
+                <p className="text-xs text-blue-700">💡 Na aanmaken gebruik je de 🔗 knop om de klant te koppelen aan een Odoo project.</p>
+              </div>
+              <button type="submit" disabled={submitting} className="w-full bg-blue-600 text-white py-4 rounded-xl font-black shadow-lg active:scale-95 transition-all disabled:opacity-50">
+                {submitting ? 'Aanmaken...' : 'Klant aanmaken'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
+      {showLinkModal && linkingCustomer && (
+        <div className="fixed inset-0 z-50 flex items-end">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowLinkModal(false)} />
+          <div className="relative w-full bg-white rounded-t-3xl p-6 shadow-2xl max-h-[80vh] flex flex-col">
+            <div className="flex justify-between items-center mb-2 shrink-0">
+              <div>
+                <h2 className="text-lg font-black text-gray-900">Project koppelen</h2>
+                <p className="text-sm text-gray-500">aan {linkingCustomer.name}</p>
+              </div>
+              <button onClick={() => setShowLinkModal(false)} className="p-2 text-gray-400"><X className="w-5 h-5" /></button>
+            </div>
+            <p className="text-xs text-gray-400 mb-3 shrink-0">Sync eerst projecten via Instellingen als de lijst leeg is.</p>
+            <div className="flex-1 overflow-y-auto space-y-2 mb-4">
               {availableLocations.length === 0 ? (
-                <div className="py-12 text-center">
-                  <p className="text-gray-400 text-sm font-bold">Geen beschikbare projecten</p>
+                <div className="py-10 text-center">
+                  <MapPin className="w-10 h-10 text-gray-200 mx-auto mb-2" />
+                  <p className="text-gray-400 text-sm">Geen vrije projecten beschikbaar</p>
                 </div>
               ) : (
-                <div className="space-y-2 mb-6">
-                  {availableLocations.map(loc => (
-                    <div
-                      key={loc.id}
-                      onClick={() => setSelectedLocationId(loc.id)}
-                      className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${
-                        selectedLocationId === loc.id
-                          ? 'border-primary-500 bg-primary-50'
-                          : 'border-gray-100 bg-gray-50'
-                      }`}
-                    >
-                      <p className="font-black text-gray-900">{loc.name}</p>
-                      {loc.address && <p className="text-xs text-gray-500 truncate mt-1">{loc.address}</p>}
-                    </div>
-                  ))}
-                </div>
+                availableLocations.map(loc => (
+                  <div
+                    key={loc.id}
+                    onClick={() => setSelectedLocationId(loc.id)}
+                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${selectedLocationId === loc.id ? 'border-blue-500 bg-blue-50' : 'border-gray-100 bg-gray-50'}`}
+                  >
+                    <p className="font-black text-gray-900">{loc.name}</p>
+                    {loc.address && <p className="text-xs text-gray-500 mt-0.5">{loc.address}</p>}
+                  </div>
+                ))
               )}
-
-              <button
-                onClick={handleLink}
-                disabled={submitting || !selectedLocationId}
-                className="w-full bg-primary-600 text-white py-5 rounded-2xl font-black shadow-xl shadow-primary-100 active:scale-95 transition-all disabled:opacity-50"
-              >
-                {submitting ? 'BEZIG...' : 'PROJECT KOPPELEN'}
-              </button>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+            </div>
+            <button
+              onClick={handleLink}
+              disabled={submitting || !selectedLocationId}
+              className="w-full bg-blue-600 text-white py-4 rounded-xl font-black active:scale-95 transition-all disabled:opacity-50 shrink-0"
+            >
+              {submitting ? 'Koppelen...' : 'Project koppelen'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
