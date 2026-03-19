@@ -131,11 +131,7 @@ const TaskDetail: React.FC = () => {
     setUploading(true);
     const toastId = toast.loading('Foto voorbereiden...');
     try {
-      const options = {
-        maxSizeMB: 0.5,
-        maxWidthOrHeight: 1200,
-        useWebWorker: true
-      };
+      const options = { maxSizeMB: 0.8, maxWidthOrHeight: 1600, useWebWorker: true };
       
       const compressedFile = await imageCompression(file, options);
       const reader = new FileReader();
@@ -324,23 +320,43 @@ const TaskDetail: React.FC = () => {
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto bg-[#efe7de] relative no-scrollbar">
         {activeTab === 'CHAT' && (
-          <div className="p-4 flex flex-col min-h-full">
-            <AnimatePresence initial={false}>
-              {task.messages?.map((msg: any) => (
-                <motion.div 
-                   key={msg.id}
-                   initial={{ opacity: 0, scale: 0.95 }}
-                   animate={{ opacity: 1, scale: 1 }}
-                   className={`message-bubble ${msg.senderId === user.id ? 'message-sent shadow-sm' : 'message-received shadow-sm'}`}
-                >
-                  <p className="text-[10px] font-bold opacity-50 mb-1">{msg.sender?.name || (msg.senderId === user.id ? 'Ik' : 'Systeem')}</p>
-                  <p className="text-sm font-medium leading-relaxed">{msg.content}</p>
-                  <p className="text-[10px] text-right mt-1 opacity-40">
-                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                </motion.div>
-              ))}
-            </AnimatePresence>
+          <div className="flex flex-col min-h-full bg-[#ece5dd] p-4">
+            {task.messages?.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-gray-400 opacity-60">
+                <MessageSquare className="w-12 h-12 mb-2" />
+                <p className="font-bold">Nog geen berichten</p>
+              </div>
+            ) : (
+              <AnimatePresence initial={false}>
+                {task.messages.map((msg: any) => {
+                  const isOwn = msg.senderId === user.id;
+                  return (
+                    <motion.div 
+                      key={msg.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`flex flex-col mb-3 ${isOwn ? 'items-end' : 'items-start'}`}
+                    >
+                      {!isOwn && (
+                        <p className="text-[10px] text-gray-400 font-semibold mb-1 ml-2">
+                          {msg.sender?.name || 'Onbekend'}
+                        </p>
+                      )}
+                      <div className={`px-4 py-2.5 max-w-[78%] shadow-sm ${
+                        isOwn 
+                          ? 'bg-blue-600 text-white rounded-2xl rounded-tr-sm' 
+                          : 'bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-sm'
+                      }`}>
+                        <p className="text-sm font-medium leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                        <p className={`text-[9px] text-right mt-1 ${isOwn ? 'text-blue-100' : 'text-gray-400'}`}>
+                          {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+            )}
             <div ref={chatEndRef} />
           </div>
         )}
@@ -493,6 +509,7 @@ const TaskDetail: React.FC = () => {
               ref={fileInputRef} 
               onChange={handlePhotoUpload} 
               accept="image/*" 
+              capture="environment"
               className="hidden" 
             />
             <button 

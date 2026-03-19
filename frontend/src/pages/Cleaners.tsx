@@ -17,7 +17,7 @@ const Cleaners: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', createOdooUser: true });
 
   const navigate = useNavigate();
 
@@ -49,7 +49,7 @@ const Cleaners: React.FC = () => {
       setCleaners(prev => [...prev, data]);
       toast.success('Kuiser aangemaakt');
       setShowModal(false);
-      setForm({ name: '', email: '', password: '' });
+      setForm({ name: '', email: '', password: '', createOdooUser: true });
     } catch (error: any) {
       toast.error(error?.response?.data?.message || 'Aanmaken mislukt');
     } finally {
@@ -199,6 +199,18 @@ const Cleaners: React.FC = () => {
                     />
                   </div>
                 </div>
+                <label className="flex items-center gap-3 p-3 bg-blue-50 rounded-xl border border-blue-100 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.createOdooUser}
+                    onChange={e => setForm({...form, createOdooUser: e.target.checked})}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  <div>
+                    <p className="text-sm font-black text-blue-900">Ook aanmaken in Odoo</p>
+                    <p className="text-xs text-blue-600">Nodig voor tijdregistratie koppeling</p>
+                  </div>
+                </label>
 
                 <button 
                   type="submit" 

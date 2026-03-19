@@ -16,9 +16,12 @@ const Messages: React.FC = () => {
         const { data } = await client.get('/tasks');
         // Sort by last message timestamp, tasks with messages first
         const sorted = [...data].sort((a, b) => {
-          const aLast = a.messages?.[a.messages.length - 1]?.timestamp || a.createdAt;
-          const bLast = b.messages?.[b.messages.length - 1]?.timestamp || b.createdAt;
-          return new Date(bLast).getTime() - new Date(aLast).getTime();
+          const aMsg = a.messages?.[0];
+          const bMsg = b.messages?.[0];
+          if (!aMsg && !bMsg) return new Date(b.date).getTime() - new Date(a.date).getTime();
+          if (!aMsg) return 1;
+          if (!bMsg) return -1;
+          return new Date(bMsg.timestamp).getTime() - new Date(aMsg.timestamp).getTime();
         });
         setTasks(sorted);
       } catch (e) {}
@@ -40,7 +43,7 @@ const Messages: React.FC = () => {
           <p className="text-center text-gray-400 py-12 font-medium">Geen gesprekken gevonden</p>
         )}
         {tasks.map(task => {
-          const lastMsg = task.messages?.[task.messages.length - 1];
+          const latestMsg = task.messages?.[0];
           const unread = false; // future: implement unread count
           return (
             <div
@@ -54,19 +57,19 @@ const Messages: React.FC = () => {
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between items-start mb-1">
                   <p className="font-black text-gray-900 truncate pr-2">{task.title}</p>
-                  {lastMsg && (
+                  {latestMsg && (
                     <p className="text-[10px] text-gray-400 font-medium shrink-0">
-                      {new Date(lastMsg.timestamp).toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(latestMsg.timestamp).toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit' })}
                     </p>
                   )}
                 </div>
                 <p className="text-xs text-gray-500 font-medium flex items-center gap-1 mb-1">
                   <MapPin className="w-3 h-3" />{task.location?.name}
                 </p>
-                {lastMsg ? (
+                {latestMsg ? (
                   <p className="text-sm text-gray-400 truncate font-medium">
-                    <span className="font-bold text-gray-600">{lastMsg.sender?.name || 'Onbekend'}: </span>
-                    {lastMsg.content}
+                    <span className="font-bold text-gray-600">{latestMsg.sender?.name || 'Onbekend'}: </span>
+                    {latestMsg.content}
                   </p>
                 ) : (
                   <p className="text-sm text-gray-300 italic">Nog geen berichten</p>

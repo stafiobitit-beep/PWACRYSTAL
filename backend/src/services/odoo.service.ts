@@ -41,26 +41,72 @@ export class OdooPartnerService {
 
 export class OdooMessageService {
   static async postMessage(taskId: number, content: string, senderName: string) {
-    return odoo.execute('mail.message', 'create', [{
-      model: 'project.task',
-      res_id: taskId,
-      body: `<b>${senderName}</b>: ${content}`,
+    // Use message_post on the task — mail.message.create fails due to Odoo access rights
+    return odoo.execute('project.task', 'message_post', [[taskId]], {
+      body: `<strong>${senderName}:</strong> ${content}`,
       message_type: 'comment',
-      subtype_id: 1, // Note
-    }]);
+      subtype_xmlid: 'mail.mt_comment',
+    });
+  }
+
+  static async getMessages(taskId: number, since?: Date) {
+    const domain: any[] = [
+      ['model', '=', 'project.task'],
+      ['res_id', '=', taskId],
+      ['message_type', 'in', ['comment', 'email']],
+    ];
+    if (since) {
+      domain.push(['date', '>=', since.toISOString().replace('T', ' ').substring(0, 19)]);
+    }
+    try {
+      return await odoo.execute('mail.message', 'search_read', [domain], {
+        fields: ['id', 'body', 'date', 'author_id', 'message_type'],
+        order: 'date asc',
+        limit: 100,
+      });
+    } catch (e: any) {
+      console.warn('[Odoo] Could not read messages:', e.message);
+      return [];
+    }
   }
 }
 
 export class OdooTimesheetService {
-  static async createTimesheet(taskId: number, minutes: number, description: string) {
-    const hours = minutes / 60;
-    return odoo.execute('account.analytic.line', 'create', [{
-      name: description || 'Cleaning Session',
+  static async createTimesheet(
+    taskId: number,
+    minutes: number,
+    description: string,
+    cleanerEmail?: string
+  ) {
+    const hours = parseFloat((minutes / 60).toFixed(4));
+    const data: any = {
+      name: description || 'Cleaning session',
       unit_amount: hours,
       task_id: taskId,
-      // project_id is usually inferred from task_id in Odoo, 
-      // but sometimes needed explicitly. We'll stick to task_id for now.
-    }]);
+    };
+
+    // Resolve Odoo user_id and employee_id from cleaner email for proper HR linking
+    if (cleanerEmail) {
+      try {
+        const users = await odoo.execute(
+          'res.users',
+          'search_read',
+          [[['login', '=', cleanerEmail], ['active', '=', true]]],
+          { fields: ['id', 'employee_ids'] }
+        );
+        if (users?.[0]) {
+          data.user_id = users[0].id;
+          const empIds = users[0].employee_ids;
+          if (Array.isArray(empIds) && empIds.length > 0) {
+            data.employee_id = empIds[0];
+          }
+        }
+      } catch (e: any) {
+        console.warn('[Odoo] Could not resolve user for timesheet:', e.message);
+      }
+    }
+
+    return odoo.execute('account.analytic.line', 'create', [data]);
   }
 }
 
@@ -86,5 +132,37 @@ export class OdooIncidentService {
       message_type: 'comment',
       subtype_id: 1, // Note
     }]);
+  }
+}
+
+export class OdooUserService {
+  static async findByEmail(email: string) {
+    try {
+      const users = await odoo.execute(
+        'res.users',
+        'search_read',
+        [[['login', '=', email]]],
+        { fields: ['id', 'name', 'email', 'employee_ids'] }
+      );
+      return users?.[0] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Creates a minimal Odoo internal user so timesheets can be linked
+  static async createInternalUser(name: string, email: string) {
+    try {
+      const userId = await odoo.execute('res.users', 'create', [{
+        name,
+        login: email,
+        groups_id: [[4, 9]], // base internal user group
+      }]);
+      console.log(`[Odoo] Created internal user ${name} (${email}), uid=${userId}`);
+      return userId as number;
+    } catch (e: any) {
+      console.error('[Odoo] Could not create Odoo user:', e.message);
+      return null;
+    }
   }
 }

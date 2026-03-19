@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import prisma from './utils/prisma.js';
 import { authenticateToken, authorizeRole, type AuthRequest } from './middleware/auth.js';
-import { OdooTaskService, OdooMessageService, OdooAttachmentService, OdooIncidentService, OdooTimesheetService, OdooProjectService, OdooPartnerService } from './services/odoo.service.js';
+import { OdooTaskService, OdooMessageService, OdooAttachmentService, OdooIncidentService, OdooTimesheetService, OdooProjectService, OdooPartnerService, OdooUserService } from './services/odoo.service.js';
 import { odoo } from './services/odoo.base.js';
 
 dotenv.config();
@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecret';
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // --- HEALTH CHECK ---
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
@@ -197,6 +197,38 @@ export async function syncOdooData(selectedProjectIds?: number[], since?: Date) 
                 ...taskData
               }
             });
+
+            // Pull new Odoo messages into app (incremental only when since is set)
+            if (since) {
+              try {
+                const odooMsgs = await OdooMessageService.getMessages(t.id, since);
+                for (const msg of odooMsgs) {
+                  const plainBody = (msg.body as string).replace(/<[^>]*>/g, '').trim();
+                  if (!plainBody) continue;
+                  const admin = await prisma.user.findFirst({ where: { role: 'ADMIN' } });
+                  if (!admin) continue;
+                  const localTask = await prisma.cleaningTask.findUnique({ where: { odooTaskId: t.id } });
+                  if (!localTask) continue;
+                  const msgDate = new Date(msg.date);
+                  const existing = await prisma.taskMessage.findFirst({
+                    where: {
+                      taskId: localTask.id,
+                      content: plainBody,
+                      timestamp: {
+                        gte: new Date(msgDate.getTime() - 5000),
+                        lte: new Date(msgDate.getTime() + 5000),
+                      }
+                    }
+                  });
+                  if (!existing) {
+                    await prisma.taskMessage.create({
+                      data: { content: plainBody, taskId: localTask.id, senderId: admin.id, timestamp: msgDate }
+                    });
+                  }
+                }
+              } catch { /* non-fatal — Odoo message read may fail on some instances */ }
+            }
+
             results.tasks++;
           }
         } catch (e: any) {
@@ -255,7 +287,7 @@ async function runAutoSync() {
 // Start auto-sync interval
 setTimeout(() => {
   runAutoSync();
-  setInterval(runAutoSync, 60 * 1000); // Smart poll every 60 seconds
+  setInterval(runAutoSync, 30 * 1000); // Smart poll every 30 seconds
 }, 15000); // 15 seconds after boot
 
 // --- AUTH ROUTES ---
@@ -504,9 +536,10 @@ app.post('/api/tasks/:id/timer/stop', authenticateToken, async (req: AuthRequest
     if (task.odooTaskId) {
       try {
         await OdooTimesheetService.createTimesheet(
-          task.odooTaskId as number, 
-          durationInMinutes, 
-          `Kuisbeurt door ${req.user!.name} - ${task.location?.name}`
+          task.odooTaskId as number,
+          durationInMinutes,
+          `Kuisbeurt – ${req.user!.name} @ ${task.location?.name ?? task.id}`,
+          req.user!.email   // ← add this
         );
       } catch (error: any) {
         console.error('[Odoo] timesheet sync failed (non-fatal):', error?.message);
@@ -795,6 +828,15 @@ app.post('/api/users/cleaners', authenticateToken, authorizeRole(['ADMIN']), asy
       select: { id: true, name: true, email: true, role: true }
     });
     res.json(user);
+
+    // Optionally create Odoo internal user for timesheet linking
+    if (req.body.createOdooUser) {
+      try {
+        await OdooUserService.createInternalUser(name, email);
+      } catch (e: any) {
+        console.warn('[Odoo] Could not create Odoo user for cleaner:', e.message);
+      }
+    }
   } catch (e) {
     res.status(500).json({ message: 'Server error' });
   }
