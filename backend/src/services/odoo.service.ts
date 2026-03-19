@@ -1,7 +1,10 @@
 import { odoo } from './odoo.base.js';
 
 export class OdooTaskService {
-  static async getTasks(domain: any[] = []) {
+  static async getTasks(domain: any[] = [], since?: Date) {
+    if (since) {
+      domain.push(['write_date', '>=', since.toISOString().replace('T', ' ').substring(0, 19)]);
+    }
     return odoo.execute('project.task', 'search_read', [domain], {
       fields: ['id', 'name', 'description', 'date_deadline', 'stage_id', 'user_ids', 'partner_id', 'project_id'],
     });
@@ -17,8 +20,12 @@ export class OdooTaskService {
 }
 
 export class OdooProjectService {
-  static async getProjects() {
-    return odoo.execute('project.project', 'search_read', [[]], {
+  static async getProjects(since?: Date) {
+    const domain: any[] = [];
+    if (since) {
+      domain.push(['write_date', '>=', since.toISOString().replace('T', ' ').substring(0, 19)]);
+    }
+    return odoo.execute('project.project', 'search_read', [domain], {
       fields: ['id', 'name', 'partner_id'],
     });
   }
@@ -71,12 +78,13 @@ export class OdooAttachmentService {
 
 export class OdooIncidentService {
   static async createIncident(taskId: number, description: string) {
-    // Custom logic: create a sub-task or a ticket
-    return odoo.execute('project.task', 'create', [{
-      name: `INCIDENT: ${description}`,
-      parent_id: taskId,
-      description: description,
-      priority: '1', // High priority
+    // In Odoo 19, we post a chatter message instead of a sub-task
+    return odoo.execute('mail.message', 'create', [{
+      model: 'project.task',
+      res_id: taskId,
+      body: `🚨 <b>INCIDENT:</b> ${description}`,
+      message_type: 'comment',
+      subtype_id: 1, // Note
     }]);
   }
 }

@@ -24,6 +24,9 @@ const TaskDetail: React.FC = () => {
   const [incidentDescription, setIncidentDescription] = useState('');
   const [uploading, setUploading] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [availableCleaners, setAvailableCleaners] = useState<{id: string, name: string}[]>([]);
+  const [selectedCleanerId, setSelectedCleanerId] = useState<string>('');
+  const [assigning, setAssigning] = useState(false);
 
   const fetchTask = async () => {
     try {
@@ -33,6 +36,11 @@ const TaskDetail: React.FC = () => {
         const start = new Date(data.timerStartedAt).getTime();
         setTimerInSeconds(Math.floor((Date.now() - start) / 1000));
       }
+      
+      // Fetch available cleaners for assignment
+      const { data: cleaners } = await client.get(`/tasks/${id}/available-cleaners`);
+      setAvailableCleaners(cleaners);
+      setSelectedCleanerId(data.cleaner?.id ?? '');
     } catch (error) {
       toast.error('Fout bij laden van taak');
     } finally {
@@ -76,10 +84,10 @@ const TaskDetail: React.FC = () => {
     if (!message.trim()) return;
     try {
       const { data } = await client.post(`/tasks/${id}/messages`, { 
-        content: message,
+        content: message.trim(),
         odooTaskId: task.odooTaskId 
       });
-      setTask((prev: any) => ({ ...prev, messages: [...prev.messages, data] }));
+      setTask((prev: any) => ({ ...prev, messages: [...(prev.messages || []), data] }));
       setMessage('');
     } catch (error) {
       toast.error('Bericht niet verzonden');
@@ -172,6 +180,21 @@ const TaskDetail: React.FC = () => {
       toast.error('Melden incident mislukt');
     } finally {
       setReporting(false);
+    }
+  };
+
+  const handleAssignCleaner = async () => {
+    setAssigning(true);
+    try {
+      await client.patch(`/tasks/${id}/assign`, {
+        cleanerId: selectedCleanerId || null
+      });
+      toast.success('Kuiser toegewezen');
+      await fetchTask();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Toewijzen mislukt');
+    } finally {
+      setAssigning(false);
     }
   };
 
@@ -373,14 +396,39 @@ const TaskDetail: React.FC = () => {
               </section>
             )}
 
-            {task.cleaner && (
-              <section>
-                <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-3">Toegewezen Kuiser</h3>
-                <div className="p-5 bg-blue-50 rounded-[24px] border border-blue-100">
+            <section>
+              <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-3">Toegewezen Kuiser</h3>
+              {task.cleaner ? (
+                <div className="p-5 bg-blue-50 rounded-[24px] border border-blue-100 mb-3">
                   <p className="font-black text-blue-900">{task.cleaner.name}</p>
                 </div>
-              </section>
-            )}
+              ) : (
+                <div className="p-5 bg-gray-50 rounded-[24px] border border-gray-100 mb-3">
+                  <p className="text-gray-400 font-medium">Geen kuiser toegewezen</p>
+                </div>
+              )}
+              {user.role === 'ADMIN' && (
+                <div className="flex gap-2">
+                  <select
+                    value={selectedCleanerId}
+                    onChange={e => setSelectedCleanerId(e.target.value)}
+                    className="flex-1 bg-gray-50 rounded-2xl px-4 py-3 font-bold text-sm border-2 border-transparent focus:border-primary-400 outline-none"
+                  >
+                    <option value="">— Geen kuiser —</option>
+                    {availableCleaners.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleAssignCleaner}
+                    disabled={assigning}
+                    className="bg-primary-600 text-white px-4 py-3 rounded-2xl font-black text-sm shrink-0 active:scale-95 transition-all disabled:opacity-50"
+                  >
+                    {assigning ? '...' : 'Toewijzen'}
+                  </button>
+                </div>
+              )}
+            </section>
 
             {task.incidents?.length > 0 && (
               <section>

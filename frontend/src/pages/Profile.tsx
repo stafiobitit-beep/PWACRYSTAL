@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/layout/BottomNav';
-import { User, LogOut, Settings as SettingsIcon, ShieldCheck } from 'lucide-react';
+import { User, LogOut, Settings as SettingsIcon, ShieldCheck, Users } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 const Profile: React.FC = () => {
@@ -37,20 +37,37 @@ const Profile: React.FC = () => {
 
       <div className="p-6 space-y-4">
         {user?.role === 'ADMIN' && (
-          <button 
-            onClick={() => navigate('/settings')}
-            className="w-full bg-white p-6 rounded-[32px] shadow-sm flex items-center justify-between group active:bg-gray-50 transition-all border border-transparent active:border-primary-100"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center group-active:bg-primary-100 transition-colors">
-                <SettingsIcon className="text-gray-500 group-active:text-primary-600" />
+          <>
+            <button
+              onClick={() => navigate('/cleaners')}
+              className="w-full bg-white p-6 rounded-[32px] shadow-sm flex items-center justify-between group active:bg-gray-50 transition-all border border-transparent active:border-primary-100 mb-4"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center group-active:bg-primary-100 transition-colors">
+                  <Users className="text-gray-500 group-active:text-primary-600" />
+                </div>
+                <div className="text-left">
+                  <p className="font-bold text-gray-900">Kuisers beheren</p>
+                  <p className="text-xs font-medium text-gray-500">Accounts aanmaken & verwijderen</p>
+                </div>
               </div>
-              <div className="text-left">
-                <p className="font-bold text-gray-900">App Settings</p>
-                <p className="text-xs font-medium text-gray-500">Configureer Odoo connectie</p>
+            </button>
+
+            <button 
+              onClick={() => navigate('/settings')}
+              className="w-full bg-white p-6 rounded-[32px] shadow-sm flex items-center justify-between group active:bg-gray-50 transition-all border border-transparent active:border-primary-100"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center group-active:bg-primary-100 transition-colors">
+                  <SettingsIcon className="text-gray-500 group-active:text-primary-600" />
+                </div>
+                <div className="text-left">
+                  <p className="font-bold text-gray-900">App Settings</p>
+                  <p className="text-xs font-medium text-gray-500">Configureer Odoo connectie</p>
+                </div>
               </div>
-            </div>
-          </button>
+            </button>
+          </>
         )}
 
         <button 
