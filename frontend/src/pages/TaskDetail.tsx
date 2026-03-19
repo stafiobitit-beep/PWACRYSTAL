@@ -505,21 +505,19 @@ const TaskDetail: React.FC = () => {
         {activeTab === 'CHAT' ? (
           <form onSubmit={handleSendMessage} className="flex gap-3 items-center">
             <input 
+              id="photo-upload"
               type="file" 
               ref={fileInputRef} 
               onChange={handlePhotoUpload} 
               accept="image/*" 
-              capture="environment"
               className="hidden" 
             />
-            <button 
-              type="button" 
-              onClick={() => fileInputRef.current?.click()} 
-              disabled={uploading}
-              className="p-3 bg-gray-100 rounded-2xl text-gray-500 active:bg-gray-200 transition-all shrink-0 disabled:opacity-50"
+            <label 
+              htmlFor="photo-upload"
+              className={`p-3 bg-gray-100 rounded-2xl text-gray-500 active:bg-gray-200 transition-all shrink-0 cursor-pointer ${uploading ? 'opacity-40 pointer-events-none' : ''}`}
             >
               <Camera className={`w-6 h-6 ${uploading ? 'animate-pulse' : ''}`} />
-            </button>
+            </label>
             <input 
               type="text" 
               value={message}
@@ -532,13 +530,12 @@ const TaskDetail: React.FC = () => {
             </button>
           </form>
         ) : activeTab === 'PHOTOS' ? (
-          <button 
-            onClick={() => fileInputRef.current?.click()} 
-            disabled={uploading}
-            className="flex items-center justify-center gap-2 w-full bg-primary-600 text-white py-4 rounded-2xl font-black shadow-xl shadow-primary-100 active:scale-95 transition-all disabled:opacity-50"
+          <label 
+            htmlFor="photo-upload"
+            className={`flex items-center justify-center gap-2 w-full bg-primary-600 text-white py-4 rounded-2xl font-black shadow-xl shadow-primary-100 active:scale-95 transition-all cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
           >
             <Camera className={`w-6 h-6 ${uploading ? 'animate-pulse' : ''}`} /> {uploading ? 'UPLOADING...' : 'FOTO TOEVOEGEN'}
-          </button>
+          </label>
         ) : isCleaner && task.status !== 'DONE' ? (
           <button onClick={() => handleStatusUpdate('DONE')} className="w-full bg-green-600 text-white py-4 rounded-2xl font-black shadow-xl shadow-green-100 active:scale-95 transition-all">
             TASK AFRONDEN

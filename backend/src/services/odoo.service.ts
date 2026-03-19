@@ -45,7 +45,8 @@ export class OdooMessageService {
     return odoo.execute('project.task', 'message_post', [[taskId]], {
       body: `<strong>${senderName}:</strong> ${content}`,
       message_type: 'comment',
-      subtype_xmlid: 'mail.mt_comment',
+      subtype_xmlid: 'mail.mt_note',
+      is_internal: true,
     });
   }
 
@@ -125,13 +126,12 @@ export class OdooAttachmentService {
 export class OdooIncidentService {
   static async createIncident(taskId: number, description: string) {
     // In Odoo 19, we post a chatter message instead of a sub-task
-    return odoo.execute('mail.message', 'create', [{
-      model: 'project.task',
-      res_id: taskId,
-      body: `🚨 <b>INCIDENT:</b> ${description}`,
+    return odoo.execute('project.task', 'message_post', [[taskId]], {
+      body: `🚨 <strong>INCIDENT:</strong><br/>${description}`,
       message_type: 'comment',
-      subtype_id: 1, // Note
-    }]);
+      subtype_xmlid: 'mail.mt_note',
+      is_internal: true,
+    });
   }
 }
 

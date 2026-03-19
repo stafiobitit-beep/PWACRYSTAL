@@ -69,7 +69,9 @@ export async function syncOdooData(selectedProjectIds, since) {
             const partners = await OdooPartnerService.getPartners();
             for (const p of partners) {
                 try {
-                    const email = p.email || `odoo_partner_${p.id}@placeholder.local`;
+                    const email = (p.email?.trim() && p.email.includes('@'))
+                        ? p.email.trim().toLowerCase()
+                        : `odoo-partner-${p.id}@internal.crystalclear.local`;
                     await prisma.user.upsert({
                         where: { email },
                         update: { name: p.name, odooPartnerId: p.id },
@@ -739,6 +741,16 @@ app.post('/api/users/cleaners', authenticateToken, authorizeRole(['ADMIN']), asy
         // Check uniqueness
         const existing = await prisma.user.findUnique({ where: { email } });
         if (existing) {
+            if (existing.role === 'CUSTOMER') {
+                return res.status(409).json({
+                    message: `Dit e-mailadres is gekoppeld aan een klant (${existing.name}). Gebruik een ander e-mailadres voor de kuiser.`
+                });
+            }
+            if (existing.role === 'CLEANER') {
+                return res.status(409).json({
+                    message: `Een kuiser met dit e-mailadres bestaat al: ${existing.name}`
+                });
+            }
             return res.status(409).json({ message: 'E-mailadres al in gebruik' });
         }
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -786,17 +798,13 @@ app.delete('/api/users/:id', authenticateToken, authorizeRole(['ADMIN']), async 
         const user = await prisma.user.findUnique({ where: { id } });
         if (!user)
             return res.status(404).json({ message: 'Gebruiker niet gevonden' });
-        if (user.role !== 'CLEANER')
-            return res.status(403).json({ message: 'Enkel kuisers kunnen verwijderd worden' });
-        // Check for active tasks
-        const activeTasks = await prisma.cleaningTask.count({
-            where: { cleanerId: id, status: 'IN_PROGRESS' }
-        });
-        if (activeTasks > 0) {
-            return res.status(409).json({ message: 'Kuiser heeft actieve taken' });
-        }
+        const activeTasks = await prisma.cleaningTask.count({ where: { cleanerId: id, status: 'IN_PROGRESS' } });
+        if (activeTasks > 0)
+            return res.status(409).json({ message: 'Gebruiker heeft actieve taken' });
+        // Unlink from tasks before deleting to avoid foreign key violations
+        await prisma.cleaningTask.updateMany({ where: { cleanerId: id }, data: { cleanerId: null } });
         await prisma.user.delete({ where: { id } });
-        res.json({ message: 'Kuiser verwijderd' });
+        res.json({ message: 'Gebruiker verwijderd' });
     }
     catch (e) {
         res.status(500).json({ message: 'Server error' });
@@ -808,6 +816,101 @@ app.get('/api/users/cleaners', authenticateToken, async (req, res) => {
         select: { id: true, name: true, email: true }
     });
     res.json(cleaners);
+});
+// GET list of Odoo internal users (for importing as cleaners)
+app.get('/api/odoo/users', authenticateToken, authorizeRole(['ADMIN']), async (_req, res) => {
+    try {
+        const odooUsers = await odoo.execute('res.users', 'search_read', [[['share', '=', false], ['active', '=', true]]], { fields: ['id', 'name', 'login', 'email'] });
+        // Filter out system users (id <= 3 are Odoo internal system users)
+        const filtered = odooUsers.filter((u) => u.id > 3);
+        res.json(filtered);
+    }
+    catch (e) {
+        res.status(500).json({ error: 'Odoo niet bereikbaar: ' + e.message });
+    }
+});
+// POST import an Odoo user as a cleaner
+app.post('/api/odoo/users/import', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
+    const { odooUserId, name, email, password } = req.body;
+    if (!name || !email || !password || password.length < 6) {
+        return res.status(400).json({ message: 'Naam, e-mail en wachtwoord (min 6 tekens) zijn verplicht' });
+    }
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+        // Already exists — just return them
+        return res.json(existing);
+    }
+    const hashed = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+        data: { name, email, password: hashed, role: 'CLEANER' },
+        select: { id: true, name: true, email: true, role: true }
+    });
+    res.json(user);
+});
+// --- CUSTOMER MANAGEMENT ROUTES ---
+// GET all customers with their locations
+app.get('/api/customers', authenticateToken, authorizeRole(['ADMIN']), async (_req, res) => {
+    const customers = await prisma.user.findMany({
+        where: { role: 'CUSTOMER' },
+        select: {
+            id: true,
+            name: true,
+            email: true,
+            odooPartnerId: true,
+            locations: {
+                select: { id: true, name: true, address: true, odooProjectId: true }
+            }
+        },
+        orderBy: { name: 'asc' }
+    });
+    res.json(customers);
+});
+// POST create a new customer
+app.post('/api/customers', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
+    const { name, email, password } = req.body;
+    if (!name || !email || !password || password.length < 6) {
+        return res.status(400).json({ message: 'Naam, e-mail en wachtwoord (min 6 tekens) zijn verplicht' });
+    }
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+        return res.status(409).json({ message: 'E-mailadres al in gebruik' });
+    }
+    const hashed = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+        data: { name, email, password: hashed, role: 'CUSTOMER' },
+        select: { id: true, name: true, email: true, role: true }
+    });
+    res.json(user);
+});
+// DELETE a customer
+app.delete('/api/customers/:id', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
+    const id = req.params.id;
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user || user.role !== 'CUSTOMER') {
+        return res.status(404).json({ message: 'Klant niet gevonden' });
+    }
+    // Unlink locations before deleting
+    await prisma.location.updateMany({ where: { customerId: id }, data: { customerId: undefined } });
+    await prisma.user.delete({ where: { id } });
+    res.json({ message: 'Klant verwijderd' });
+});
+// POST link a customer to a location (project)
+app.post('/api/customers/:id/locations', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
+    const { locationId } = req.body;
+    const customerId = req.params.id;
+    const customer = await prisma.user.findUnique({ where: { id: customerId } });
+    if (!customer || customer.role !== 'CUSTOMER') {
+        return res.status(404).json({ message: 'Klant niet gevonden' });
+    }
+    const location = await prisma.location.findUnique({ where: { id: locationId } });
+    if (!location) {
+        return res.status(404).json({ message: 'Locatie niet gevonden' });
+    }
+    const updated = await prisma.location.update({
+        where: { id: locationId },
+        data: { customerId }
+    });
+    res.json(updated);
 });
 app.get('/api/locations', authenticateToken, authorizeRole(['ADMIN']), async (req, res) => {
     const locations = await prisma.location.findMany({ include: { customer: { select: { name: true } } } });

@@ -10,6 +10,7 @@ import CreateTask from './pages/CreateTask';
 import Messages from './pages/Messages';
 import Calendar from './pages/Calendar';
 import Cleaners from './pages/Cleaners';
+import Customers from './pages/Customers';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const token = localStorage.getItem('token');
@@ -34,6 +35,7 @@ const App: React.FC = () => {
         <Route path="/calendar" element={<ProtectedRoute><Calendar /></ProtectedRoute>} />
         <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
         <Route path="/cleaners" element={<ProtectedRoute><Cleaners /></ProtectedRoute>} />
+        <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
         
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
       </Routes>

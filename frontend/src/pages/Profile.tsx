@@ -40,7 +40,7 @@ const Profile: React.FC = () => {
           <>
             <button
               onClick={() => navigate('/cleaners')}
-              className="w-full bg-white p-6 rounded-[32px] shadow-sm flex items-center justify-between group active:bg-gray-50 transition-all border border-transparent active:border-primary-100 mb-4"
+              className="w-full bg-white p-6 rounded-[32px] shadow-sm flex items-center justify-between group active:bg-gray-50 transition-all border border-transparent active:border-primary-100"
             >
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center group-active:bg-primary-100 transition-colors">
@@ -49,6 +49,21 @@ const Profile: React.FC = () => {
                 <div className="text-left">
                   <p className="font-bold text-gray-900">Kuisers beheren</p>
                   <p className="text-xs font-medium text-gray-500">Accounts aanmaken & verwijderen</p>
+                </div>
+              </div>
+            </button>
+
+            <button
+              onClick={() => navigate('/customers')}
+              className="w-full bg-white p-6 rounded-[32px] shadow-sm flex items-center justify-between group active:bg-gray-50 transition-all border border-transparent active:border-primary-100"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center group-active:bg-primary-100 transition-colors">
+                  <User className="text-gray-500 group-active:text-primary-600" />
+                </div>
+                <div className="text-left">
+                  <p className="font-bold text-gray-900">Klanten beheren</p>
+                  <p className="text-xs font-medium text-gray-500">Aanmaken en koppelen aan projecten</p>
                 </div>
               </div>
             </button>
