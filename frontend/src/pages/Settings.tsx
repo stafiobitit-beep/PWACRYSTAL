@@ -82,16 +82,12 @@ const Settings: React.FC = () => {
   };
 
   const toggleProject = (projectId: number) => {
-    setSelectedProjectIds(prev => 
-      prev.includes(projectId) 
-        ? prev.filter(id => id !== projectId) 
-        : [...prev, projectId]
-    );
+    setSelectedProjectIds([projectId]); // Radio style: only one project allowed
   };
 
   const handleSync = async () => {
     if (selectedProjectIds.length === 0) {
-      toast.error('Selecteer eerst minimaal één project');
+      toast.error('Selecteer eerst een project');
       return;
     }
     const id = toast.loading('Synchroniseren met Odoo...');
@@ -214,7 +210,7 @@ const Settings: React.FC = () => {
           </h2>
           
           <p className="text-xs text-gray-500 mb-6 font-medium leading-relaxed">
-            Haal eerst je projecten op uit Odoo en selecteer welke je wilt synchroniseren naar de app.
+            Haal eerst je projecten op uit Odoo en selecteer **één** project dat je wilt synchroniseren naar de app.
           </p>
 
           <button
@@ -239,10 +235,10 @@ const Settings: React.FC = () => {
                   }`}
                 >
                   <span className="text-sm truncate pr-4">{p.name}</span>
-                  <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${
+                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
                     selectedProjectIds.includes(p.id) ? 'bg-primary-600 border-primary-600' : 'border-gray-300'
                   }`}>
-                    {selectedProjectIds.includes(p.id) ? <Check className="w-3 h-3 text-white" /> : null}
+                    {selectedProjectIds.includes(p.id) ? <div className="w-2 h-2 rounded-full bg-white" /> : null}
                   </div>
                 </div>
               ))}
@@ -259,7 +255,7 @@ const Settings: React.FC = () => {
             }`}
           >
             <RefreshCw className={`w-6 h-6 ${fetchingProjects ? 'animate-spin' : ''}`} />
-            GESELECTEERDE SYNCEN ({selectedProjectIds.length})
+            GESELECTEERD SYNCEN
           </button>
 
           {syncResults && (
@@ -302,7 +298,7 @@ const Settings: React.FC = () => {
           </div>
           <div>
             <h3 className="text-white font-bold">Auto-Sync actief</h3>
-            <p className="text-blue-100 text-xs">Wijzigingen in Odoo worden elke 5 minuten automatisch verwerkt.</p>
+            <p className="text-blue-100 text-xs">Wijzigingen in Odoo worden elke 30 seconden automatisch verwerkt.</p>
           </div>
         </div>
 
